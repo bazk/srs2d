@@ -21,22 +21,22 @@ __date__ = "19 Jun 2013"
 import unittest
 import srs2d.physics
 
-class BasicPhysicsTestCase(unittest.TestCase):
+class SimpleWorldTestCase(unittest.TestCase):
     def setUp(self):
-        self.physics = srs2d.physics.BasicPhysics()
+        self.world = srs2d.physics.World()
 
-class InitialStateTestCase(BasicPhysicsTestCase):
+class InitialWorldTestCase(SimpleWorldTestCase):
     def runTest(self):
-        (step_count, clock, shapes) = self.physics.get_state()
+        (step_count, clock, shapes) = self.world.get_state()
         self.assertEqual(step_count, 0, 'incorrect initial step_count')
         self.assertEqual(clock, 0.0, 'incorrect initial clock')
         self.assertEqual(shapes, [], 'initial shapes list has objects')
 
-class StepTestCase(BasicPhysicsTestCase):
+class OneStepWorldTestCase(SimpleWorldTestCase):
     def runTest(self):
-        self.physics.step()
-        (step_count, clock, shapes) = self.physics.get_state()
+        self.world.step()
+        (step_count, clock, shapes) = self.world.get_state()
         self.assertEqual(step_count, 1, 'incorrect step_count after one step')
-        self.assertEqual(clock, self.physics.time_step,
+        self.assertEqual(clock, self.world.time_step,
                 'incorrect clock after one step')
         self.assertEqual(shapes, [], 'shapes list has objects after one step')

@@ -17,8 +17,6 @@
 
 """
 This module provides a simple physics wrapper for PyBox2D.
-
-Check BasicPhysics class documentation for more information.
 """
 
 __author__ = "Eduardo L. Buratti <eburatti09@gmail.com>"
@@ -30,17 +28,17 @@ import Box2D
 
 __log__ = logging.getLogger(__name__)
 
-class BasicPhysics(object):
+class World(object):
     """
-    BasicPhysics is just a PyBox2D wrapper used as basis for the simulator.
+    Creates a 2D top-down physics World.
 
     Usage:
 
-        p = BasicPhysics()
+        world = World()
 
         while 1:
-            p.step()
-            (step_count, clock, shapes) = p.get_state()
+            world.step()
+            (step_count, clock, shapes) = world.get_state()
             # draw_the_screen(shapes)
     """
 
@@ -51,11 +49,11 @@ class BasicPhysics(object):
     def __init__(self):
         __log__.info("Initializing physics...")
 
-        self.lock = threading.Lock()
+        self._lock = threading.Lock()
 
-        self.world = Box2D.b2World(gravity=(0, 0), doSleep=True)
-        self.world.destructionListener = _DestructionListener(self)
-        self.world.contactListener = _ContactListener(self)
+        self._world = Box2D.b2World(gravity=(0, 0), doSleep=True)
+        self._world.destructionListener = _DestructionListener(self)
+        self._world.contactListener = _ContactListener(self)
 
         self.step_count = 0.0
         self.clock = 0.0
@@ -65,28 +63,28 @@ class BasicPhysics(object):
     def reset(self):
         """Reset counters and clock (does not reset the world itself)."""
 
-        self.lock.acquire()
+        self._lock.acquire()
 
         try:
             __log__.info("Reset.")
             self.step_count = 0.0
             self.clock = 0.0
         finally:
-            self.lock.release()
+            self._lock.release()
 
     def step(self):
         """Run a single physics step."""
-        self.lock.acquire()
+        self._lock.acquire()
 
         try:
-            self.world.Step(self.time_step, self.velocity_iterations,
+            self._world.Step(self.time_step, self.velocity_iterations,
                     self.position_iterations)
             self.on_step()
             self.step_count += 1
             self.clock += self.time_step
 
         finally:
-            self.lock.release()
+            self._lock.release()
 
     def simulate(self, seconds):
         """Simply calls self.step() until reaches the wanted number of seconds
@@ -107,17 +105,17 @@ class BasicPhysics(object):
 
         state = None
 
-        self.lock.acquire()
+        self._lock.acquire()
 
         try:
             shapes = []
 
-            for body in self.world.bodies:
+            for body in self._world.bodies:
                 self.__get_body_shapes(body, shapes)
 
             state = (self.step_count, self.clock, shapes)
         finally:
-            self.lock.release()
+            self._lock.release()
 
         return state
 
