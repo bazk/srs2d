@@ -22,6 +22,8 @@ import unittest
 import srs2d.physics
 
 class ExtendedSimulator(srs2d.physics.Simulator):
+    """Extend the simulator to mark which callbacks were called."""
+
     called_on_step = False
     called_on_pre_solve = False
     called_on_begin_contact = False
@@ -48,10 +50,14 @@ class ExtendedSimulator(srs2d.physics.Simulator):
         self.called_on_destroy = True
 
 class EmptySimulator(unittest.TestCase):
+    """Setup an empty simulator."""
+
     def setUp(self):
         self.simulator = ExtendedSimulator()
 
 class EmptyTestCase(EmptySimulator):
+    """Check if step() is working."""
+
     def runTest(self):
         (step_count, clock, shapes) = self.simulator.get_state()
         self.assertEqual(step_count, 0, 'incorrect initial step_count')
@@ -67,14 +73,25 @@ class EmptyTestCase(EmptySimulator):
         self.assertEqual(shapes, [], 'shapes list has objects after one step')
 
 class OneBodySimulator(EmptySimulator):
+    """Extend the empty simulatori setup adding one body."""
+
     def setUp(self):
         super(OneBodySimulator, self).setUp()
         self.body1 = self.simulator.world.CreateDynamicBody()
         self.fixture1 = self.body1.CreateCircleFixture(radius=0.06, density=27)
 
 class OneBodyTestCase(OneBodySimulator):
+    """Checks if on_step was called."""
+
     def runTest(self):
+        self.assertEqual(self.simulator.called_on_step,
+                False, 'on_step called before time')
+
         self.simulator.step()
+
+        self.assertEqual(self.simulator.called_on_step,
+                True, 'on_step not called')
+
         (step_count, clock, shapes) = self.simulator.get_state()
         self.assertEqual(step_count, 1, 'incorrect step_count after one step')
         self.assertEqual(clock, self.simulator.time_step,
@@ -82,6 +99,8 @@ class OneBodyTestCase(OneBodySimulator):
         self.assertNotEqual(shapes, [], 'shapes list does not have any objects')
 
 class TwoBodiesSimulator(unittest.TestCase):
+    """Setup a simulator with two bodies not colliding"""
+
     def setUp(self):
         self.simulator = ExtendedSimulator()
 
@@ -92,6 +111,9 @@ class TwoBodiesSimulator(unittest.TestCase):
         self.fixture2 = self.body2.CreateCircleFixture(radius=0.06, density=27)
 
 class TwoBodiesTestCase(TwoBodiesSimulator):
+    """Checks if no calls to collision methods happened (since the bodies
+    are not colliding)."""
+
     def runTest(self):
         self.assertEqual(self.simulator.called_on_step,
                 False, 'on_step called before time')
@@ -112,6 +134,9 @@ class TwoBodiesTestCase(TwoBodiesSimulator):
                 False, 'on_destroy called')
 
 class ThreeBodiesCollisionTestCase(TwoBodiesSimulator):
+    """Add one more body colliding with the other ones and check if collision
+    methods get called."""
+
     def setUp(self):
         super(ThreeBodiesCollisionTestCase, self).setUp()
 
