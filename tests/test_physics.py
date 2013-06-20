@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 #
-# This file is part of trooper-simulator.
+# This file is part of srs2d.
 #
-# trooper-simulator is free software: you can redistribute it and/or modify
+# srs2d is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
@@ -13,7 +13,7 @@
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with Foobar.  If not, see <http://www.gnu.org/licenses/>.
+# along with srs2d. If not, see <http://www.gnu.org/licenses/>.
 
 __author__ = "Eduardo L. Buratti <eburatti09@gmail.com>"
 __date__ = "19 Jun 2013"
