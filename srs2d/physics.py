@@ -28,17 +28,17 @@ import Box2D
 
 __log__ = logging.getLogger(__name__)
 
-class World(object):
+class Simulator(object):
     """
-    Creates a 2D top-down physics World.
+    Creates a 2D top-down physics Simulator.
 
     Usage:
 
-        world = World()
+        sim = Simulator()
 
         while 1:
-            world.step()
-            (step_count, clock, shapes) = world.get_state()
+            sim.step()
+            (step_count, clock, shapes) = sim.get_state()
             # draw_the_screen(shapes)
     """
 
@@ -51,9 +51,9 @@ class World(object):
 
         self._lock = threading.Lock()
 
-        self._world = Box2D.b2World(gravity=(0, 0), doSleep=True)
-        self._world.destructionListener = _DestructionListener(self)
-        self._world.contactListener = _ContactListener(self)
+        self.world = Box2D.b2World(gravity=(0, 0), doSleep=True)
+        self.world.destructionListener = _DestructionListener(self)
+        self.world.contactListener = _ContactListener(self)
 
         self.step_count = 0.0
         self.clock = 0.0
@@ -77,7 +77,7 @@ class World(object):
         self._lock.acquire()
 
         try:
-            self._world.Step(self.time_step, self.velocity_iterations,
+            self.world.Step(self.time_step, self.velocity_iterations,
                     self.position_iterations)
             self.on_step()
             self.step_count += 1
@@ -110,7 +110,7 @@ class World(object):
         try:
             shapes = []
 
-            for body in self._world.bodies:
+            for body in self.world.bodies:
                 self.__get_body_shapes(body, shapes)
 
             state = (self.step_count, self.clock, shapes)
@@ -219,7 +219,7 @@ class _ContactListener(Box2D.b2ContactListener):
         self.parent.on_pre_solve(contact, old_manifold)
 
     def BeginContact(self, contact):
-        self.parent.on_egin_contact(contact)
+        self.parent.on_begin_contact(contact)
 
     def EndContact(self, contact):
         self.parent.on_end_contact(contact)
