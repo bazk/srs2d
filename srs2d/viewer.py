@@ -72,7 +72,7 @@ class Viewer(object):
         self.__write_pos = 30
         self.check_events()
 
-        self.draw_circle(self._to_screen(Box2D.b2Vec2(0,0)), 0.01 * self.zoom, fill=(0,0,0))
+        self.draw_circle(self._to_screen(Box2D.b2Vec2(0,0)), 0.02 * self.zoom, fill=(255,255,255))
 
         self.write(str(self.clock.get_fps()), (200, 0, 0))
 
@@ -125,6 +125,63 @@ class Viewer(object):
         self.surface.blit(self.font.render(text, True, color), (5, self.__write_pos))
         self.__write_pos += 15
 
+    def draw_shape(self, shape):
+        if not 'type' in shape:
+            __log__.warn('Shape without type: %s', str(shape))
+            return
+
+        if (not 'color' in shape) or (shape['color'] is None):
+            color = (146, 229, 146)
+        else:
+            color = shape['color']
+
+        fill = (color[0], color[1], color[2], 127)
+        border = (color[0], color[1], color[2], 255)
+
+        if (shape['type'] == 'point'):
+            if not 'center' in shape:
+                __log__.warn('Point without center: %s', str(shape))
+                return
+
+            center = self._to_screen(b2Vec2(shape['center']))
+            radius = 0.01 * self.zoom
+            self.draw_circle(center, radius, fill=shape['color'])
+
+        elif (shape['type'] == 'segment'):
+            if (not 'p1' in shape) or (not 'p2' in shape):
+                __log__.warn('Segment without points (p1 or p2): %s', str(shape))
+                return
+
+            p1 = b2Vec2(shape['p1'])
+            p2 = b2Vec2(shape['p2'])
+            self.draw_segment(self._to_screen(p1), self._to_screen(p2), fill=fill)
+
+        elif (shape['type'] == 'polygon'):
+            if not 'vertices' in shape:
+                __log__.warn('Polygon without vertices: %s', str(shape))
+                return
+
+            vertices = [ self._to_screen(b2Vec2(v)) for v in shape['vertices'] ]
+            self.draw_polygon(vertices, fill=fill, border=border)
+
+        elif (shape['type'] == 'circle'):
+            if (not 'center' in shape) or (not 'radius' in shape):
+                __log__.warn('Polygon without center or radius: %s', str(shape))
+                return
+
+            center = self._to_screen(b2Vec2(shape['center']))
+            radius = shape['radius'] * self.zoom
+
+            if 'orientation' in shape:
+                orientation = b2Vec2(shape['orientation'])
+            else:
+                orientation = None
+
+            self.draw_circle(center, radius, orientation=orientation, fill=fill, border=border)
+
+        else:
+            __log__.warn('Unknown shape type: %s', str(shape))
+
     def draw_segment(self, p1, p2, fill=None):
         if not fill:
             return
@@ -170,36 +227,36 @@ class Viewer(object):
         v1 = self._to_screen(Box2D.b2Mul(transform, shape.vertex1))
         v2 = self._to_screen(Box2D.b2Mul(transform, shape.vertex2))
 
-        self.DrawSegment(v1, v2, fill=fill)
+        self.draw_segment(v1, v2, fill=fill)
 
     def draw_polygon_shape(self, shape, transform, fill=None, border=None):
         vertices = [ self._to_screen(Box2D.b2Mul(transform, v)) for v in shape.vertices ]
 
-        self.DrawPolygon(vertices, fill=fill, border=border)
+        self.draw_polygon(vertices, fill=fill, border=border)
 
     def draw_circle_shape(self, shape, transform, fill=None, border=None):
         center = self._to_screen(Box2D.b2Mul(transform, shape.pos))
         radius = shape.radius * self.zoom
         orientation = transform.R.col2
 
-        self.DrawCircle(center, radius, orientation=orientation, fill=fill, border=border)
+        self.draw_circle(center, radius, orientation=orientation, fill=fill, border=border)
 
     def draw_shape(self, shape, transform, fill=None, border=None):
         if isinstance(shape, Box2D.b2PolygonShape):
-            self.DrawPolygonShape(shape, transform, fill=fill, border=border)
+            self.draw_polygonShape(shape, transform, fill=fill, border=border)
 
         elif isinstance(shape, Box2D.b2CircleShape):
-            self.DrawCircleShape(shape, transform, fill=fill, border=border)
+            self.draw_circleShape(shape, transform, fill=fill, border=border)
 
         elif isinstance(shape, Box2D.b2EdgeShape):
-            self.DrawSegmentShape(shape, transform, fill=fill)
+            self.draw_segmentShape(shape, transform, fill=fill)
 
         elif isinstance(shape, Box2D.b2LoopShape):
             vertices = shape.vertices
             v1 = self._to_screen(Box2D.b2Mul(transform, vertices[-1]))
             for v2 in vertices:
                 v2 = self._to_screen(Box2D.b2Mul(transform, v2))
-                self.DrawSegment(v1, v2, color)
+                self.draw_segment(v1, v2, color)
                 v1 = v2
 
 if __name__=="__main__":
