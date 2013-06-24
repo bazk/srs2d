@@ -293,21 +293,3 @@ class Scene(object):
         orientation = transform.R.col2
 
         self.draw_circle(center, radius, orientation=orientation, fill=fill, border=border)
-
-    def draw_shape(self, shape, transform, fill=None, border=None):
-        if isinstance(shape, Box2D.b2PolygonShape):
-            self.draw_polygonShape(shape, transform, fill=fill, border=border)
-
-        elif isinstance(shape, Box2D.b2CircleShape):
-            self.draw_circleShape(shape, transform, fill=fill, border=border)
-
-        elif isinstance(shape, Box2D.b2EdgeShape):
-            self.draw_segmentShape(shape, transform, fill=fill)
-
-        elif isinstance(shape, Box2D.b2LoopShape):
-            vertices = shape.vertices
-            v1 = self._to_screen(Box2D.b2Mul(transform, vertices[-1]))
-            for v2 in vertices:
-                v2 = self._to_screen(Box2D.b2Mul(transform, v2))
-                self.draw_segment(v1, v2, color)
-                v1 = v2
