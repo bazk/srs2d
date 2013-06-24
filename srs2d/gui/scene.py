@@ -114,6 +114,9 @@ class Scene(object):
         self.__write_pos = 30
         self.check_events()
 
+        for shape in shapes:
+            self.draw_shape(shape)
+
         self.draw_circle(self._to_screen(Box2D.b2Vec2(0,0)), 0.02 * self.zoom, fill=(255,255,255))
 
         self.dropdown.draw(self.surface)
@@ -196,7 +199,7 @@ class Scene(object):
                 __log__.warn('Point without center: %s', str(shape))
                 return
 
-            center = self._to_screen(b2Vec2(shape['center']))
+            center = self._to_screen(Box2D.b2Vec2(shape['center']))
             radius = 0.01 * self.zoom
             self.draw_circle(center, radius, fill=shape['color'])
 
@@ -205,8 +208,8 @@ class Scene(object):
                 __log__.warn('Segment without points (p1 or p2): %s', str(shape))
                 return
 
-            p1 = b2Vec2(shape['p1'])
-            p2 = b2Vec2(shape['p2'])
+            p1 = Box2D.b2Vec2(shape['p1'])
+            p2 = Box2D.b2Vec2(shape['p2'])
             self.draw_segment(self._to_screen(p1), self._to_screen(p2), fill=fill)
 
         elif (shape['type'] == 'polygon'):
@@ -214,7 +217,7 @@ class Scene(object):
                 __log__.warn('Polygon without vertices: %s', str(shape))
                 return
 
-            vertices = [ self._to_screen(b2Vec2(v)) for v in shape['vertices'] ]
+            vertices = [ self._to_screen(Box2D.b2Vec2(v)) for v in shape['vertices'] ]
             self.draw_polygon(vertices, fill=fill, border=border)
 
         elif (shape['type'] == 'circle'):
@@ -222,11 +225,11 @@ class Scene(object):
                 __log__.warn('Polygon without center or radius: %s', str(shape))
                 return
 
-            center = self._to_screen(b2Vec2(shape['center']))
+            center = self._to_screen(Box2D.b2Vec2(shape['center']))
             radius = shape['radius'] * self.zoom
 
             if 'orientation' in shape:
-                orientation = b2Vec2(shape['orientation'])
+                orientation = Box2D.b2Vec2(shape['orientation'])
             else:
                 orientation = None
 
