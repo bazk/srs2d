@@ -32,6 +32,7 @@ import Box2D
 
 import dropdown
 from .. import physics
+from .. import robot
 
 __log__ = logging.getLogger(__name__)
 
@@ -51,6 +52,8 @@ class Scene(object):
 
     target_fps = 30.0
 
+    selected_shape = None
+
     def __init__(self):
         pygame.init()
 
@@ -68,13 +71,16 @@ class Scene(object):
         self.screen = pygame.display.set_mode(self.resolution)
         self.surface = pygame.Surface(self.resolution, pygame.SRCALPHA)
         self.clock = pygame.time.Clock()
+
         self.dropdown = dropdown.DropDown(self.font)
+        self.dropdown.add_item('Add robot', callback=self.add_robot)
 
         self.zoom = 180
         self.center = Box2D.b2Vec2(0, 0)
         self.offset = (-self.resolution[0]/2, -self.resolution[1]/2)
 
         self.simulator = physics.Simulator()
+        self.robots = []
 
     def run(self):
         while not self.do_exit:
@@ -90,7 +96,6 @@ class Scene(object):
 
     def start(self):
         self.running = True
-        print 'start'
 
     def stop(self):
         self.running = False
@@ -101,20 +106,25 @@ class Scene(object):
     def is_running(self):
         return self.running
 
+    def add_robot(self, pos):
+        rob = robot.Robot(self.simulator, position=self._to_world(pos))
+        rob.set_motor_power(0, 0.5)
+        self.robots.append(rob)
+
     def draw(self):
         if self.running or self.do_step:
             self.simulator.time_step = 1.0 / self.target_fps
             self.simulator.step()
             self.do_step = False
 
-        (step_count, real_clock, shapes) = self.simulator.get_state()
+        (step_count, real_clock, self.shapes) = self.simulator.get_state()
 
         self.screen.fill(self.background)
         self.surface.fill(self.background)
         self.__write_pos = 30
         self.check_events()
 
-        for shape in shapes:
+        for shape in self.shapes:
             self.draw_shape(shape)
 
         self.draw_circle(self._to_screen(Box2D.b2Vec2(0,0)), 0.02 * self.zoom, fill=(255,255,255))
@@ -146,6 +156,41 @@ class Scene(object):
 
             elif event.type == pygame.MOUSEBUTTONUP:
                 self.dropdown.mouse_up(event)
+
+                if event.button == 1:
+                    new_shape = self.check_click_shape(event)
+
+                    if new_shape is None and self.selected_shape is not None:
+                        print 'deselect shape'
+                    elif new_shape is not None and self.selected_shape is None:
+                        print 'select shape'
+                    elif new_shape is not None and self.selected_shape is not None:
+                        print 'switch selection'
+
+                    self.selected_shape = new_shape
+
+    def check_click_shape(self, event):
+        x, y = event.pos
+
+        for shape in self.shapes:
+            if not 'type' in shape:
+                continue
+
+            if (shape['type'] == 'point') or (shape['type'] == 'circle'):
+                if not 'center' in shape:
+                    continue
+
+                center_x, center_y = self._to_screen(Box2D.b2Vec2(shape['center']))
+
+                if shape['type'] == 'point' or not 'radius' in shape:
+                    radius = 0.01 * self.zoom
+                else:
+                    radius = shape['radius'] * self.zoom
+
+                if ((x - center_x)**2 + (y - center_y)**2) <= (radius**2):
+                    return shape
+
+        return None
 
     def _to_screen(self, point):
         """Transform a world point to screen point."""
@@ -191,8 +236,14 @@ class Scene(object):
         else:
             color = shape['color']
 
-        fill = (color[0], color[1], color[2], 127)
-        border = (color[0], color[1], color[2], 255)
+        if (self.selected_shape is not None) and ('body_id' in shape) and \
+          ('body_id' in self.selected_shape) and \
+          (shape['body_id'] == self.selected_shape['body_id']):
+            fill = (color[0], color[1], color[2], 127)
+            border = (color[0], color[1], color[2], 255)
+        else:
+            fill = (color[0], color[1], color[2], 47)
+            border = (color[0], color[1], color[2], 142)
 
         if (shape['type'] == 'point'):
             if not 'center' in shape:
