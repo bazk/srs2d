@@ -26,10 +26,11 @@ import math
 import random
 import logging
 import Box2D
+import physics
 
 __log__ = logging.getLogger(__name__)
 
-class Robot(object):
+class Robot(physics.DynamicObject):
     """
     Creates a robot with differential wheels.
 
@@ -37,39 +38,53 @@ class Robot(object):
         r = Robot(world, position=(4.1,2.0))
     """
 
-    def __init__(self, world, position=None, angle=None):
-        self._world = world
+    MAX_SPEED = 0.4
+    DRIVE_FORCE = 0.2
+
+    # friction
+    DRAG = 0.9
+    DRIFT = -4
+
+    TIRE_VERTICES = [ (-0.0085, 0.015), (0.0085, 0.015), 
+                      (0.0085, -0.015), (-0.0085, -0.015) ]
+
+    def __init__(self, simulator, position=(0, 0), angle=0.0):
+        super(Robot, self).__init__(simulator)
+
+        self.body_id = id(self)
+        self.simulator = simulator
         self.initialPosition = position
         self.initialAngle = angle
 
-        self.body = world.CreateDynamicBody()
+        self.body = simulator.world.CreateDynamicBody(position=position)
         self.body.userData = self
-
-        if position is not None:
-            self.body.position = position
-
-        if angle is not None:
-            self.body.angle = angle
 
         self.fixture = self.body.CreateCircleFixture(radius=0.06, density=27)
         self.fixture.userData = self
 
-        ## calculate a mask for the tires so they wont collide with the body
-        #tiresMaskBits = (maskBits ^ (~categoryBits)) & 0x1111
+        self.tires = ( simulator.world.CreateDynamicBody(position=(position[0]-0.04225, position[1])),
+                       simulator.world.CreateDynamicBody(position=(position[0]+0.04225, position[1])) )
 
-        self.tires = ( Tire(self._world),
-                       Tire(self._world) )
+        self.desired_speed = {0: 0.0, 1: 0.0}
 
-        self._world.CreateWeldJoint(bodyA=self.body, bodyB=self.tires[0].body,
+        for tire in self.tires:
+            fixture = tire.CreatePolygonFixture(vertices=self.TIRE_VERTICES, density=1300*0.03)
+            tire.userData = self
+            fixture.userData = self
+
+        simulator.world.CreateWeldJoint(bodyA=self.body, bodyB=self.tires[0],
                 localAnchorA=Box2D.b2Vec2(-0.04425, 0), localAnchorB=Box2D.b2Vec2(0, 0))
-        self._world.CreateWeldJoint(bodyA=self.body, bodyB=self.tires[1].body,
+        simulator.world.CreateWeldJoint(bodyA=self.body, bodyB=self.tires[1],
                 localAnchorA=Box2D.b2Vec2(0.04425, 0), localAnchorB=Box2D.b2Vec2(0, 0))
 
     def reset(self, reset_position=True):
         """Reset the robot (stop)."""
 
-        self.tires[0].reset()
-        self.tires[1].reset()
+        for tire in self.tires:
+            self.desired_speed[0] = 0.0
+            self.desired_speed[1] = 0.0
+            tire.linearVelocity = Box2D.b2Vec2(0, 0)
+            tire.angularVelocity = 0
 
         self.body.linearVelocity = Box2D.b2Vec2(0, 0)
         self.body.angularVelocity = 0
@@ -86,19 +101,48 @@ class Robot(object):
         #self.tires[0].body.position = position - Box2D.b2Vec2(-0.04425, 0)
         #self.tires[1].body.position = position - Box2D.b2Vec2(0.04425, 0)
 
-    def set_power(self, power):
-        """Set the robot power for both motor. The 'power' parameter
-        should be a (power0, power1) tuple where powerI is the power for the
-        motor I. The power is a real number between -1.0 and 1.0."""
+    def set_motor_power(self, motor, power):
+        """Set the motor power for one motor. The 'motor' parameter is an
+        integer 0 or 1, representing left and right motor, respectively. The
+        'power' is a real number between -1.0 and 1.0."""
 
-        self.tires[0].set_power(power[0])
-        self.tires[1].set_power(power[1])
+        speed = power * self.MAX_SPEED
+
+        if (speed > self.MAX_SPEED):
+            self.desired_speed[motor] = self.MAX_SPEED
+        elif (speed < -self.MAX_SPEED):
+            self.desired_speed[motor] = -self.MAX_SPEED
+        else:
+            self.desired_speed[motor] = speed
 
     def on_step(self):
         """Step callback."""
 
-        self.tires[0].step()
-        self.tires[1].step()
+        self._step_tire(self.tires[0], self.desired_speed[0])
+        self._step_tire(self.tires[1], self.desired_speed[1])
+
+    def _step_tire(self, tire, desired_speed):
+        """Calculate and apply forces on a tire."""
+
+        forward_normal = tire.GetWorldVector(Box2D.b2Vec2(0,1))
+        forward_speed = Box2D.b2Dot(forward_normal, tire.linearVelocity)
+        forward_velocity = forward_speed * forward_normal
+
+        lateral_normal = tire.GetWorldVector(Box2D.b2Vec2(1,0))
+        lateral_speed = Box2D.b2Dot(lateral_normal, tire.linearVelocity)
+        lateral_velocity = lateral_speed * lateral_normal
+
+        # apply necessary force
+        force = 0
+        if desired_speed > forward_speed:
+            force = self.DRIVE_FORCE
+        elif desired_speed < forward_speed:
+            force = -self.DRIVE_FORCE
+
+        if force != 0:
+            tire.ApplyForce(force * forward_normal, tire.worldCenter, wake=True)
+
+        tire.linearVelocity = (self.DRAG * forward_velocity) + (self.DRIFT * lateral_velocity)
 
     def is_colliding(self):
         """Returns true if the robot is colliding with something else."""
@@ -129,71 +173,3 @@ class Robot(object):
         self.world.QueryAABB(cb, self.fixture.GetAABB(0))
 
         return cb.hit
-
-class Tire(object):
-    """Implements a tire for the robot."""
-
-    MAX_SPEED = 0.4
-    DRIVE_FORCE = 0.2
-
-    VERTICES = [ (-0.0085, 0.015), (0.0085, 0.015), 
-                 (0.0085, -0.015), (-0.0085, -0.015) ]
-
-    def __init__(self, world):
-        self._world = world
-
-        self.body = world.CreateDynamicBody()
-        self.body.userData = self
-
-        self.fixture = self.body.CreatePolygonFixture(
-                vertices=self.VERTICES, density=1300*0.03)
-        self.fixture.userData = self
-
-        self.desired_speed = 0
-
-    def reset(self):
-        """Reset the tire (stop)."""
-
-        self.desired_speed = 0
-        self.body.linearVelocity = Box2D.b2Vec2(0, 0)
-        self.body.angularVelocity = 0
-
-    def on_step(self):
-        """Step callback."""
-
-        forward_normal = self.body.GetWorldVector(Box2D.b2Vec2(0,1))
-        forward_speed = b2Dot(forward_normal, self.body.linearVelocity)
-        forward_velocity = forward_speed * forward_normal
-
-        lateral_normal = self.body.GetWorldVector(Box2D.b2Vec2(1,0))
-        lateral_speed = b2Dot(lateral_normal, self.body.linearVelocity)
-        lateral_velocity = lateral_speed * lateral_normal
-
-        # apply necessary force
-        force = 0
-        if self.desired_speed > forward_speed:
-            force = self.DRIVE_FORCE
-        elif self.desired_speed < forward_speed:
-            force = -self.DRIVE_FORCE
-
-        if force != 0:
-            self.body.ApplyForce(force * forward_normal, self.body.worldCenter, wake=True)
-
-        # friction
-        drag = 0.9
-        drift = -4
-
-        self.body.linearVelocity = (drag * forward_velocity) + (drift * lateral_velocity)
-
-    def set_power(self, power):
-        """Set the motor power for this tire. The power is a real number
-        between -1.0 and 1.0."""
-
-        speed = power * self.MAX_SPEED
-
-        if (speed > self.MAX_SPEED):
-            self.desired_speed = self.MAX_SPEED
-        elif (speed < -self.MAX_SPEED):
-            self.desired_speed = -self.MAX_SPEED
-
-        self.desired_speed = speed
