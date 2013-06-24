@@ -57,13 +57,13 @@ class Robot(object):
         ## calculate a mask for the tires so they wont collide with the body
         #tiresMaskBits = (maskBits ^ (~categoryBits)) & 0x1111
 
-        self.tires = ( Tire(self.world),
-                       Tire(self.world) )
+        self.tires = ( Tire(self._world),
+                       Tire(self._world) )
 
-        self.world.CreateWeldJoint(bodyA=self.body, bodyB=self.tires[0].body,
-                localAnchorA=b2Vec2(-0.04425, 0), localAnchorB=b2Vec2(0, 0))
-        self.world.CreateWeldJoint(bodyA=self.body, bodyB=self.tires[1].body,
-                localAnchorA=b2Vec2(0.04425, 0), localAnchorB=b2Vec2(0, 0))
+        self._world.CreateWeldJoint(bodyA=self.body, bodyB=self.tires[0].body,
+                localAnchorA=Box2D.b2Vec2(-0.04425, 0), localAnchorB=Box2D.b2Vec2(0, 0))
+        self._world.CreateWeldJoint(bodyA=self.body, bodyB=self.tires[1].body,
+                localAnchorA=Box2D.b2Vec2(0.04425, 0), localAnchorB=Box2D.b2Vec2(0, 0))
 
     def reset(self, reset_position=True):
         """Reset the robot (stop)."""
@@ -71,7 +71,7 @@ class Robot(object):
         self.tires[0].reset()
         self.tires[1].reset()
 
-        self.body.linearVelocity = b2Vec2(0, 0)
+        self.body.linearVelocity = Box2D.b2Vec2(0, 0)
         self.body.angularVelocity = 0
 
         if reset_position:
@@ -83,8 +83,8 @@ class Robot(object):
         self.body.position = position
         self.body.angle = angle
 
-        #self.tires[0].body.position = position - b2Vec2(-0.04425, 0)
-        #self.tires[1].body.position = position - b2Vec2(0.04425, 0)
+        #self.tires[0].body.position = position - Box2D.b2Vec2(-0.04425, 0)
+        #self.tires[1].body.position = position - Box2D.b2Vec2(0.04425, 0)
 
     def set_power(self, power):
         """Set the robot power for both motor. The 'power' parameter
@@ -155,17 +155,17 @@ class Tire(object):
         """Reset the tire (stop)."""
 
         self.desired_speed = 0
-        self.body.linearVelocity = b2Vec2(0, 0)
+        self.body.linearVelocity = Box2D.b2Vec2(0, 0)
         self.body.angularVelocity = 0
 
     def on_step(self):
         """Step callback."""
 
-        forward_normal = self.body.GetWorldVector(b2Vec2(0,1))
+        forward_normal = self.body.GetWorldVector(Box2D.b2Vec2(0,1))
         forward_speed = b2Dot(forward_normal, self.body.linearVelocity)
         forward_velocity = forward_speed * forward_normal
 
-        lateral_normal = self.body.GetWorldVector(b2Vec2(1,0))
+        lateral_normal = self.body.GetWorldVector(Box2D.b2Vec2(1,0))
         lateral_speed = b2Dot(lateral_normal, self.body.linearVelocity)
         lateral_velocity = lateral_speed * lateral_normal
 
