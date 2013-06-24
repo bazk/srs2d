@@ -79,6 +79,7 @@ class Simulator(object):
         try:
             self.world.Step(self.time_step, self.velocity_iterations,
                     self.position_iterations)
+            self.world.ClearForces()
             self.on_step()
             self.step_count += 1
             self.clock += self.time_step
