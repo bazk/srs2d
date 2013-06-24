@@ -43,6 +43,7 @@ class Main(gtk.Window):
 
     def scene_exit(self):
         self.scene = None
+        gtk.main_quit()
 
     def on_step_clicked(self, button):
         if self.scene is None:
@@ -50,6 +51,7 @@ class Main(gtk.Window):
 
         if self.scene.is_running():
             self.scene.stop()
+            self.start_stop_button.set_label('Start')
 
         self.scene.step()
 
@@ -59,7 +61,7 @@ class Main(gtk.Window):
 
         if self.scene.is_running():
             self.scene.stop()
-            self.start_stop_button.label = 'Start'
+            self.start_stop_button.set_label('Start')
         else:
             self.scene.start()
-            self.start_stop_button.label = 'Stop'
+            self.start_stop_button.set_label('Stop')
