@@ -60,7 +60,7 @@ class DropDown(object):
 
         maxwidth = 0
         for item in self.items:
-            width, height = self.font.size(item.text)
+            width, height = self.font.size(item.label)
             if width > maxwidth:
                 maxwidth = width
 
@@ -75,7 +75,7 @@ class DropDown(object):
         idx = 0
 
         for item in self.items:
-            width, height = self.font.size(item.text)
+            width, height = self.font.size(item.label)
 
             height += self.margin_top + self.margin_bottom
 
@@ -86,7 +86,7 @@ class DropDown(object):
             box = pygame.Rect(xpos, ypos, self.width, height)
             pygame.draw.rect(surface, bg, box, 0)
 
-            surface.blit(self.font.render(item.text, True, (0, 0, 0)),
+            surface.blit(self.font.render(item.label, True, (0, 0, 0)),
                     (xpos + self.margin_left, ypos + self.margin_top))
 
             idx += 1
@@ -105,8 +105,9 @@ class DropDown(object):
             if self._is_inside(event.pos):
                 if event.button == 1:
                     item = self._get_highlighted_item()
-                    if item is not None:
-                        item.click()
+                    if item is not None and item.callback is not None:
+                        item.callback(self.pos)
+                        self.hidden = True
 
             else:
                 if event.button == 3:
@@ -115,8 +116,8 @@ class DropDown(object):
                 else:
                     self.hidden = True
 
-    def add_item(self, item):
-        self.items.append(item)
+    def add_item(self, label, callback=None):
+        self.items.append(DropDownItem(label, callback))
 
     def _is_inside(self, pos):
         if (pos[0] > self.pos[0]) and (pos[0] < (self.pos[0] + self.width)) and \
@@ -124,7 +125,6 @@ class DropDown(object):
             return True
 
         return False
-
 
     def _get_highlighted_item(self):
         mouse = pygame.mouse.get_pos()
@@ -139,8 +139,6 @@ class DropDown(object):
 
 
 class DropDownItem(object):
-    def __init__(self, text):
-        self.text = text
-
-    def click(self):
-        pass
+    def __init__(self, label, callback):
+        self.label = label
+        self.callback = callback
