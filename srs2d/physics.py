@@ -58,6 +58,8 @@ class Simulator(object):
         self.step_count = 0.0
         self.clock = 0.0
 
+        self.objects = []
+
         __log__.info("Initialization complete.")
 
     def reset(self):
@@ -80,7 +82,12 @@ class Simulator(object):
             self.world.Step(self.time_step, self.velocity_iterations,
                     self.position_iterations)
             self.world.ClearForces()
+
+            for obj in self.objects:
+                obj.on_step()
+
             self.on_step()
+
             self.step_count += 1
             self.clock += self.time_step
 
@@ -99,6 +106,9 @@ class Simulator(object):
             self.step()
 
         __log__.info("Simulation complete.")
+
+    def register_object(self, obj):
+        self.objects.append(obj)
 
     def get_state(self):
         """Returns the state of the physics world as
@@ -127,15 +137,15 @@ class Simulator(object):
         transform = body.transform
 
         for fixture in body.fixtures:
-            trackid = None
+            body_id = None
             color = None
 
             if fixture.userData is not None:
                 if hasattr(fixture.userData, 'drawShapes'):
                     shapes.extend(fixture.userData.drawShapes)
 
-                if hasattr(fixture.userData, 'id'):
-                    trackid = fixture.userData.id
+                if hasattr(fixture.userData, 'body_id'):
+                    body_id = fixture.userData.body_id
 
                 if hasattr(fixture.userData, 'color'):
                     color = fixture.userData.color
@@ -172,8 +182,8 @@ class Simulator(object):
                         'orientation': (orientation.x, orientation.y) }
 
             if shape_def is not None:
-                if trackid is not None:
-                    shape_def['track'] = trackid
+                if body_id is not None:
+                    shape_def['body_id'] = body_id
 
                 shapes.append(shape_def)
 
@@ -227,3 +237,11 @@ class _ContactListener(Box2D.b2ContactListener):
 
     def PostSolve(self, contact, impulse):
         self.parent.on_post_solve(contact, impulse)
+
+class DynamicObject(object):
+    def __init__(self, simulator):
+        self.simulator = simulator
+        simulator.register_object(self)
+
+    def on_step(self):
+        pass
