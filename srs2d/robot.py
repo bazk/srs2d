@@ -45,14 +45,12 @@ class Robot(physics.DynamicObject):
     DRAG = 0.9
     DRIFT = -4
 
-    TIRE_VERTICES = [ (-0.0085, 0.015), (0.0085, 0.015), 
+    TIRE_VERTICES = [ (-0.0085, 0.015), (0.0085, 0.015),
                       (0.0085, -0.015), (-0.0085, -0.015) ]
 
     def __init__(self, simulator, position=(0, 0), angle=0.0):
         super(Robot, self).__init__(simulator)
 
-        self.body_id = id(self)
-        self.simulator = simulator
         self.initialPosition = position
         self.initialAngle = angle
 
@@ -76,6 +74,12 @@ class Robot(physics.DynamicObject):
                 localAnchorA=Box2D.b2Vec2(-0.04425, 0), localAnchorB=Box2D.b2Vec2(0, 0))
         simulator.world.CreateWeldJoint(bodyA=self.body, bodyB=self.tires[1],
                 localAnchorA=Box2D.b2Vec2(0.04425, 0), localAnchorB=Box2D.b2Vec2(0, 0))
+
+        self.add(self.body)
+        for tire in self.tires:
+            self.add(tire)
+
+        self.update_shapes()
 
     def reset(self, reset_position=True):
         """Reset the robot (stop)."""

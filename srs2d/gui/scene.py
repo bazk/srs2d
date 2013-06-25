@@ -99,24 +99,67 @@ class Scene(object):
         rob.set_motor_power(0, 0.5)
         self.robots.append(rob)
 
+    def on_mouse_down(self, event):
+        self.dropdown.on_mouse_down(event)
+
+    def on_mouse_up(self, event):
+        if not self.dropdown.on_mouse_up(event):
+            if event.button == 1:
+                new_shape = self._check_selection(event)
+
+                if new_shape is not None and self.selected_shape is not None and \
+                        new_shape.object_id == self.selected_shape.object_id:
+                    return True
+
+                if new_shape is not None:
+                    self.on_select_shape(new_shape)
+
+                if self.selected_shape is not None:
+                    self.on_deselect_shape(self.selected_shape)
+
+                self.selected_shape = new_shape
+
+                return (new_shape is not None)
+
+    def on_mouse_move(self, event):
+        self.dropdown.on_mouse_move(event)
+
+    def _check_selection(self, event):
+        for obj in self.simulator.objects:
+            for shape in obj.shapes:
+                if isinstance(shape, physics.CircleShape):
+                    center_x, center_y = self._to_screen(Box2D.b2Vec2(shape.center))
+                    radius = shape.radius * self.zoom
+
+                    if ((event.x - center_x)**2 + (event.y - center_y)**2) <= (radius**2):
+                        return shape
+
+        return None
+
+    def on_select_shape(self, shape):
+        print 'on_select_shape'
+
+    def on_deselect_shape(self, shape):
+        print 'on_deselect_shape'
+
     def draw(self):
         if self.running or self.do_step:
             self.simulator.time_step = 1.0 / self.target_fps
             self.simulator.step()
             self.do_step = False
 
-        (step_count, real_clock, self.shapes) = self.simulator.get_state()
-
         self.screen.fill(self.background)
         self.surface.fill(self.background)
         self.__write_pos = 30
 
-        for shape in self.shapes:
-            self.draw_shape(shape)
+        for obj in self.simulator.objects:
+            self.draw_object(obj)
 
         self.draw_circle(self._to_screen(Box2D.b2Vec2(0,0)), 0.02 * self.zoom, fill=(255,255,255))
 
         self.dropdown.draw(self.surface)
+
+        real_clock = self.simulator.clock
 
         self.write(str(self.clock.get_fps()), (200,80,80))
         self.write("%02d:%02d:%02d" % (int(real_clock) / 3600,
@@ -126,67 +169,6 @@ class Scene(object):
         self.screen.blit(self.surface, (0, 0))
         self.clock.tick(self.target_fps)
         pygame.display.flip()
-
-    def check_events(self):
-        keys = pygame.key.get_pressed()
-
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                self.do_exit = True
-
-            elif event.type == pygame.KEYDOWN:
-                if (event.key == pygame.K_q) or (event.key == pygame.K_ESCAPE):
-                    self.do_exit = True
-
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                self.dropdown.mouse_down(event)
-
-            elif event.type == pygame.MOUSEBUTTONUP:
-                self.dropdown.mouse_up(event)
-
-                if event.button == 1:
-                    new_shape = self.check_click_shape(event)
-
-                    if new_shape is None and self.selected_shape is not None:
-                        print 'deselect shape'
-                    elif new_shape is not None and self.selected_shape is None:
-                        print 'select shape'
-                    elif new_shape is not None and self.selected_shape is not None:
-                        print 'switch selection'
-
-                    self.selected_shape = new_shape
-
-    def mouse_down(self, event):
-        self.dropdown.mouse_down(event)
-
-    def mouse_up(self, event):
-        self.dropdown.mouse_up(event)
-
-    def mouse_move(self, event):
-        self.dropdown.mouse_move(event)
-
-    def check_click_shape(self, event):
-        x, y = event.pos
-
-        for shape in self.shapes:
-            if not 'type' in shape:
-                continue
-
-            if (shape['type'] == 'point') or (shape['type'] == 'circle'):
-                if not 'center' in shape:
-                    continue
-
-                center_x, center_y = self._to_screen(Box2D.b2Vec2(shape['center']))
-
-                if shape['type'] == 'point' or not 'radius' in shape:
-                    radius = 0.01 * self.zoom
-                else:
-                    radius = shape['radius'] * self.zoom
-
-                if ((x - center_x)**2 + (y - center_y)**2) <= (radius**2):
-                    return shape
-
-        return None
 
     def _to_screen(self, point):
         """Transform a world point to screen point."""
@@ -218,72 +200,37 @@ class Scene(object):
 
         return Box2D.b2Vec2(x, y)
 
-    def write(self, text, color):
-        self.surface.blit(self.font.render(text, True, color), (5, self.__write_pos))
-        self.__write_pos += 15
+    def draw_object(self, obj):
+        for shape in obj.shapes:
+            self.draw_shape(shape)
 
     def draw_shape(self, shape):
-        if not 'type' in shape:
-            __log__.warn('Shape without type: %s', str(shape))
-            return
-
-        if (not 'color' in shape) or (shape['color'] is None):
+        if shape.color is None:
             color = (146, 229, 146)
         else:
-            color = shape['color']
+            color = shape.color
 
-        if (self.selected_shape is not None) and ('body_id' in shape) and \
-          ('body_id' in self.selected_shape) and \
-          (shape['body_id'] == self.selected_shape['body_id']):
-            fill = (color[0], color[1], color[2], 127)
-            border = (color[0], color[1], color[2], 255)
+        if (self.selected_shape is not None) and (shape.object_id == self.selected_shape.object_id):
+            fill = (color[0], color[1], color[2], 87)
+            border = (color[0], color[1], color[2], 242)
         else:
             fill = (color[0], color[1], color[2], 47)
             border = (color[0], color[1], color[2], 142)
 
-        if (shape['type'] == 'point'):
-            if not 'center' in shape:
-                __log__.warn('Point without center: %s', str(shape))
-                return
-
-            center = self._to_screen(Box2D.b2Vec2(shape['center']))
-            radius = 0.01 * self.zoom
-            self.draw_circle(center, radius, fill=shape['color'])
-
-        elif (shape['type'] == 'segment'):
-            if (not 'p1' in shape) or (not 'p2' in shape):
-                __log__.warn('Segment without points (p1 or p2): %s', str(shape))
-                return
-
-            p1 = Box2D.b2Vec2(shape['p1'])
-            p2 = Box2D.b2Vec2(shape['p2'])
-            self.draw_segment(self._to_screen(p1), self._to_screen(p2), fill=fill)
-
-        elif (shape['type'] == 'polygon'):
-            if not 'vertices' in shape:
-                __log__.warn('Polygon without vertices: %s', str(shape))
-                return
-
-            vertices = [ self._to_screen(Box2D.b2Vec2(v)) for v in shape['vertices'] ]
+        if isinstance(shape, physics.PolygonShape):
+            vertices = [ self._to_screen(Box2D.b2Vec2(v)) for v in shape.vertices ]
             self.draw_polygon(vertices, fill=fill, border=border)
 
-        elif (shape['type'] == 'circle'):
-            if (not 'center' in shape) or (not 'radius' in shape):
-                __log__.warn('Polygon without center or radius: %s', str(shape))
-                return
+        elif isinstance(shape, physics.CircleShape):
+            center = self._to_screen(Box2D.b2Vec2(shape.center))
+            radius = shape.radius * self.zoom
 
-            center = self._to_screen(Box2D.b2Vec2(shape['center']))
-            radius = shape['radius'] * self.zoom
-
-            if 'orientation' in shape:
-                orientation = Box2D.b2Vec2(shape['orientation'])
+            if shape.orientation is not None:
+                orientation = Box2D.b2Vec2(shape.orientation)
             else:
                 orientation = None
 
             self.draw_circle(center, radius, orientation=orientation, fill=fill, border=border)
-
-        else:
-            __log__.warn('Unknown shape type: %s', str(shape))
 
     def draw_segment(self, p1, p2, fill=None):
         if not fill:
@@ -343,3 +290,7 @@ class Scene(object):
         orientation = transform.R.col2
 
         self.draw_circle(center, radius, orientation=orientation, fill=fill, border=border)
+
+    def write(self, text, color):
+        self.surface.blit(self.font.render(text, True, color), (5, self.__write_pos))
+        self.__write_pos += 15

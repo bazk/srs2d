@@ -94,34 +94,42 @@ class DropDown(object):
             idx += 1
             ypos += height
 
-    def mouse_down(self, event):
-        pass
+    def on_mouse_down(self, event):
+        return False
 
-    def mouse_up(self, event):
+    def on_mouse_up(self, event):
         pos = (event.x, event.y)
-        print event.button, pos
 
         if self.hidden:
             if event.button == 3:
+                # show dropdown menu
                 self.hidden = False
                 self.pos = pos
+                return True
 
         else:
             if self._is_inside(pos):
                 if event.button == 1:
+                    # click on a DropDownItem
                     item = self._get_highlighted_item()
                     if item is not None and item.callback is not None:
                         item.callback(self.pos)
                         self.hidden = True
 
+                return True
+
             else:
                 if event.button == 3:
-                    self.hidden = False
+                    # move menu to a new position
                     self.pos = pos
+                    return True
                 else:
+                    # click outside menu, hide it
                     self.hidden = True
 
-    def mouse_move(self, event):
+        return False
+
+    def on_mouse_move(self, event):
         self.mouse_pos = (event.x, event.y)
 
     def add_item(self, label, callback=None):
@@ -135,11 +143,10 @@ class DropDown(object):
         return False
 
     def _get_highlighted_item(self):
-        print self.mouse_pos
         if not self._is_inside(self.mouse_pos):
             return None
 
-        idx = int(math.floor(float(self.mouse_pos[1] - self.self.mouse_pos[1]) /
+        idx = int(math.floor(float(self.mouse_pos[1] - self.mouse_pos[1]) /
             float(self.item_height + self.margin_top + self.margin_bottom)))
 
         return self.items[idx]

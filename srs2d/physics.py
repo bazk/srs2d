@@ -46,6 +46,8 @@ class Simulator(object):
     velocity_iterations = 3
     position_iterations = 1
 
+    current_id_seq = 0
+
     def __init__(self):
         __log__.info("Initializing physics...")
 
@@ -88,104 +90,19 @@ class Simulator(object):
 
             self.on_step()
 
+            for obj in self.objects:
+                obj.update_shapes()
+
             self.step_count += 1
             self.clock += self.time_step
 
         finally:
             self._lock.release()
 
-    def simulate(self, seconds):
-        """Simply calls self.step() until reaches the wanted number of seconds
-        (in simulation time, not real time)."""
-
-        __log__.info("Simulating %d seconds...", seconds)
-
-        target = self.step_count + (seconds / self.time_step)
-
-        while self.step_count < target:
-            self.step()
-
-        __log__.info("Simulation complete.")
-
     def register_object(self, obj):
         self.objects.append(obj)
-
-    def get_state(self):
-        """Returns the state of the physics world as
-        (step_count, clock, shapes) tuple."""
-
-        state = None
-
-        self._lock.acquire()
-
-        try:
-            shapes = []
-
-            for body in self.world.bodies:
-                self.__get_body_shapes(body, shapes)
-
-            state = (self.step_count, self.clock, shapes)
-        finally:
-            self._lock.release()
-
-        return state
-
-    @staticmethod
-    def __get_body_shapes(body, shapes):
-        """Extends 'shapes' with 'body' shapes."""
-
-        transform = body.transform
-
-        for fixture in body.fixtures:
-            body_id = None
-            color = None
-
-            if fixture.userData is not None:
-                if hasattr(fixture.userData, 'drawShapes'):
-                    shapes.extend(fixture.userData.drawShapes)
-
-                if hasattr(fixture.userData, 'body_id'):
-                    body_id = fixture.userData.body_id
-
-                if hasattr(fixture.userData, 'color'):
-                    color = fixture.userData.color
-
-            shape = fixture.shape
-
-            if color is None and body.userData is not None \
-                    and hasattr(fixture.userData, 'color'):
-                color = body.userData.color
-
-            shape_def = None
-
-            if isinstance(shape, Box2D.b2PolygonShape):
-                vertices = []
-                for vertex in shape.vertices:
-                    transformed = transform * vertex
-                    vertices.append((transformed.x, transformed.y))
-
-                shape_def = { 'type': 'polygon',
-                             'group': 'bodies',
-                             'color': color,
-                             'vertices': vertices }
-
-            elif isinstance(shape, Box2D.b2CircleShape):
-                center = Box2D.b2Mul(transform, shape.pos)
-                orientation = transform.R.col2
-
-                shape_def = {
-                        'type': 'circle',
-                        'group': 'bodies',
-                        'color': color,
-                        'center': (center.x, center.y),
-                        'radius': shape.radius,
-                        'orientation': (orientation.x, orientation.y) }
-
-            if shape_def is not None:
-                if body_id is not None:
-                    shape_def['body_id'] = body_id
-
-                shapes.append(shape_def)
+        self.current_id_seq += 1
+        return self.current_id_seq - 1
 
     def on_step(self):
         """Called after every single step."""
@@ -241,7 +158,64 @@ class _ContactListener(Box2D.b2ContactListener):
 class DynamicObject(object):
     def __init__(self, simulator):
         self.simulator = simulator
-        simulator.register_object(self)
+        self.id = simulator.register_object(self)
+        self.color = (254, 0, 0)
+        self.bodies = []
+        self.shapes = []
+
+    def add(self, body):
+        self.bodies.append(body)
 
     def on_step(self):
         pass
+
+    def update_shapes(self):
+        self.shapes = []
+
+        for body in self.bodies:
+            transform = body.transform
+
+            for fixture in body.fixtures:
+                b2shape = fixture.shape
+                shape = None
+
+                if isinstance(b2shape, Box2D.b2PolygonShape):
+                    shape = PolygonShape()
+
+                    for vertex in b2shape.vertices:
+                        transformed = transform * vertex
+                        shape.vertices.append((transformed.x, transformed.y))
+
+                elif isinstance(b2shape, Box2D.b2CircleShape):
+                    shape = CircleShape()
+
+                    center = Box2D.b2Mul(transform, b2shape.pos)
+                    orientation = transform.R.col2
+
+                    shape.center = (center.x, center.y)
+                    shape.radius = b2shape.radius
+                    shape.orientation = (orientation.x, orientation.y)
+
+                else:
+                    shape = Shape()
+
+                shape.object_id = self.id
+                shape.color = self.color
+
+                self.shapes.append(shape)
+
+class Shape(object):
+    object_id = None
+    color = (234, 0, 0)
+
+class PolygonShape(Shape):
+    def __init__(self):
+        super(PolygonShape, self).__init__()
+        self.vertices = []
+
+class CircleShape(Shape):
+    def __init__(self):
+        super(CircleShape, self).__init__()
+        self.center = (0.0, 0.0)
+        self.radius = 1
+        self.orientation = None

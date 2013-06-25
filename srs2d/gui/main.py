@@ -35,7 +35,7 @@ class Main(gtk.Window):
         toolbar.set_orientation(gtk.ORIENTATION_HORIZONTAL)
         toolbar.set_style(gtk.TOOLBAR_ICONS)
         toolbar.set_border_width(5)
-        
+
         self.step_button = gtk.ToolButton(label='Step')
         self.step_button.set_icon_widget(self.icon_loop)
         self.step_button.connect('clicked', self.on_step_clicked)
@@ -51,15 +51,14 @@ class Main(gtk.Window):
         hbox = gtk.HBox()
         vbox.pack_start(hbox, expand=True, fill=True)
 
-        
+        area_event_box = gtk.EventBox()
+        area_event_box.add_events(gtk.gdk.MOTION_NOTIFY | gtk.gdk.BUTTON_PRESS)
+        area_event_box.connect('button-press-event', self.on_mouse_down)
+        area_event_box.connect('button-release-event', self.on_mouse_up)
+        area_event_box.connect('motion-notify-event', self.on_mouse_move)
         area = gtk.DrawingArea()
         area.set_app_paintable(True)
         area.set_size_request(self.scene_resolution[0], self.scene_resolution[1])
-
-        area_event_box = gtk.EventBox()
-        area_event_box.connect('button-press-event', self.mouse_down)
-        area_event_box.connect('button-release-event', self.mouse_up)
-        area_event_box.connect('motion-notify-event', self.mouse_move)
         area_event_box.add(area)
         hbox.pack_start(area_event_box, expand=True, fill=False)
 
@@ -77,14 +76,17 @@ class Main(gtk.Window):
 
         self.show_all()
 
-        try:
-            gtk.main()
-        except KeyboardInterrupt:
-            if self.scene is not None:
-                self.scene.exit()
+        gtk.main()
 
     def exit(self, widget, data=None):
         gtk.main_quit()
+
+    def draw_scene(self):
+        try:
+            self.scene.draw()
+            gobject.idle_add(self.draw_scene)
+        except KeyboardInterrupt:
+            gtk.main_quit()
 
     def on_step_clicked(self, button):
         if self.scene is None:
@@ -93,6 +95,7 @@ class Main(gtk.Window):
         if self.scene.is_running():
             self.scene.stop()
             self.start_stop_button.set_label('Start')
+            self.start_stop_button.set_icon_widget(self.icon_play)
 
         self.scene.step()
 
@@ -109,18 +112,14 @@ class Main(gtk.Window):
             self.start_stop_button.set_label('Stop')
             self.start_stop_button.set_icon_widget(self.icon_pause)
 
-    def draw_scene(self):
-        self.scene.draw()
-        gobject.idle_add(self.draw_scene)
-
-    def mouse_move(self, widget, event):
+    def on_mouse_down(self, widget, event):
         if self.scene is not None:
-            self.scene.mouse_move(event)
+            self.scene.on_mouse_down(event)
 
-    def mouse_down(self, widget, event):
+    def on_mouse_up(self, widget, event):
         if self.scene is not None:
-            self.scene.mouse_down(event)
+            self.scene.on_mouse_up(event)
 
-    def mouse_up(self, widget, event):
+    def on_mouse_move(self, widget, event):
         if self.scene is not None:
-            self.scene.mouse_up(event)
+            self.scene.on_mouse_move(event)
