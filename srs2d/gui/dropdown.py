@@ -38,6 +38,8 @@ class DropDown(object):
     hidden = True
     pos = (0, 0)
 
+    mouse_pos = (0, 0)
+
     margin_top = 4
     margin_right = 4
     margin_bottom = 4
@@ -96,13 +98,16 @@ class DropDown(object):
         pass
 
     def mouse_up(self, event):
+        pos = (event.x, event.y)
+        print event.button, pos
+
         if self.hidden:
             if event.button == 3:
                 self.hidden = False
-                self.pos = event.pos
+                self.pos = pos
 
         else:
-            if self._is_inside(event.pos):
+            if self._is_inside(pos):
                 if event.button == 1:
                     item = self._get_highlighted_item()
                     if item is not None and item.callback is not None:
@@ -112,9 +117,12 @@ class DropDown(object):
             else:
                 if event.button == 3:
                     self.hidden = False
-                    self.pos = event.pos
+                    self.pos = pos
                 else:
                     self.hidden = True
+
+    def mouse_move(self, event):
+        self.mouse_pos = (event.x, event.y)
 
     def add_item(self, label, callback=None):
         self.items.append(DropDownItem(label, callback))
@@ -127,12 +135,11 @@ class DropDown(object):
         return False
 
     def _get_highlighted_item(self):
-        mouse = pygame.mouse.get_pos()
-
-        if not self._is_inside(mouse):
+        print self.mouse_pos
+        if not self._is_inside(self.mouse_pos):
             return None
 
-        idx = int(math.floor(float(mouse[1] - self.pos[1]) /
+        idx = int(math.floor(float(self.mouse_pos[1] - self.self.mouse_pos[1]) /
             float(self.item_height + self.margin_top + self.margin_bottom)))
 
         return self.items[idx]

@@ -1,31 +1,79 @@
+import os
 import gtk
 import gobject
 import threading
 import scene
 
+gobject.threads_init()
+
+def get_resource_path(rel_path):
+    dir_of_py_file = os.path.dirname(__file__)
+    rel_path_to_resource = os.path.join(dir_of_py_file, rel_path)
+    abs_path_to_resource = os.path.abspath(rel_path_to_resource)
+    return abs_path_to_resource
+
 class Main(gtk.Window):
+    scene_resolution = (800, 600)
+
     def __init__(self):
         super(Main, self).__init__()
         self.set_name("SRS2D Viewer")
 
         self.connect("destroy", self.exit)
 
+        self.icon_play = gtk.image_new_from_file(get_resource_path("icons/play.xpm"))
+        self.icon_play.show()
+        self.icon_pause = gtk.image_new_from_file(get_resource_path("icons/pause.xpm"))
+        self.icon_pause.show()
+        self.icon_loop = gtk.image_new_from_file(get_resource_path("icons/loop.xpm"))
+        self.icon_loop.show()
+
         vbox = gtk.VBox()
         self.add(vbox)
 
-        self.step_button = gtk.Button(label='Step')
-        vbox.pack_start(self.step_button)
-        self.start_stop_button = gtk.Button(label='Start')
-        vbox.pack_start(self.start_stop_button)
-
+        toolbar = gtk.Toolbar()
+        toolbar.set_orientation(gtk.ORIENTATION_HORIZONTAL)
+        toolbar.set_style(gtk.TOOLBAR_ICONS)
+        toolbar.set_border_width(5)
+        
+        self.step_button = gtk.ToolButton(label='Step')
+        self.step_button.set_icon_widget(self.icon_loop)
         self.step_button.connect('clicked', self.on_step_clicked)
+        toolbar.insert(self.step_button, 0)
+
+        self.start_stop_button = gtk.ToolButton(label='Start')
+        self.start_stop_button.set_icon_widget(self.icon_play)
         self.start_stop_button.connect('clicked', self.on_start_stop_clicked)
+        toolbar.insert(self.start_stop_button, 1)
 
-        self.scene = None
+        vbox.pack_start(toolbar, expand=False, fill=False)
 
-        self.scene = scene.Scene()
-        self.scene.exit_callback = self.scene_exit
-        threading.Thread(target=self.scene.run).start()
+        hbox = gtk.HBox()
+        vbox.pack_start(hbox, expand=True, fill=True)
+
+        
+        area = gtk.DrawingArea()
+        area.set_app_paintable(True)
+        area.set_size_request(self.scene_resolution[0], self.scene_resolution[1])
+
+        area_event_box = gtk.EventBox()
+        area_event_box.connect('button-press-event', self.mouse_down)
+        area_event_box.connect('button-release-event', self.mouse_up)
+        area_event_box.connect('motion-notify-event', self.mouse_move)
+        area_event_box.add(area)
+        hbox.pack_start(area_event_box, expand=True, fill=False)
+
+        area.realize()
+
+        # Force SDL to write on our drawing area
+        os.putenv('SDL_WINDOWID', str(area.window.xid))
+
+        # We need to flush the XLib event loop otherwise we can't
+        # access the XWindow which set_mode() requires
+        gtk.gdk.flush()
+
+        self.scene = scene.Scene(resolution=self.scene_resolution)
+        gobject.idle_add(self.draw_scene)
 
         self.show_all()
 
@@ -36,13 +84,6 @@ class Main(gtk.Window):
                 self.scene.exit()
 
     def exit(self, widget, data=None):
-        if self.scene is not None:
-            self.scene.exit()
-
-        gtk.main_quit()
-
-    def scene_exit(self):
-        self.scene = None
         gtk.main_quit()
 
     def on_step_clicked(self, button):
@@ -62,6 +103,24 @@ class Main(gtk.Window):
         if self.scene.is_running():
             self.scene.stop()
             self.start_stop_button.set_label('Start')
+            self.start_stop_button.set_icon_widget(self.icon_play)
         else:
             self.scene.start()
             self.start_stop_button.set_label('Stop')
+            self.start_stop_button.set_icon_widget(self.icon_pause)
+
+    def draw_scene(self):
+        self.scene.draw()
+        gobject.idle_add(self.draw_scene)
+
+    def mouse_move(self, widget, event):
+        if self.scene is not None:
+            self.scene.mouse_move(event)
+
+    def mouse_down(self, widget, event):
+        if self.scene is not None:
+            self.scene.mouse_down(event)
+
+    def mouse_up(self, widget, event):
+        if self.scene is not None:
+            self.scene.mouse_up(event)

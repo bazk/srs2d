@@ -37,9 +37,6 @@ from .. import robot
 __log__ = logging.getLogger(__name__)
 
 class Scene(object):
-    background = (0, 0, 0)
-    resolution = (1024, 768)
-
     _flipX = False
     _flipY = False
 
@@ -54,7 +51,10 @@ class Scene(object):
 
     selected_shape = None
 
-    def __init__(self):
+    def __init__(self, background=(0,0,0), resolution=(800,600)):
+        self.background = background
+        self.resolution = resolution
+
         pygame.init()
 
         try:
@@ -81,18 +81,6 @@ class Scene(object):
 
         self.simulator = physics.Simulator()
         self.robots = []
-
-    def run(self):
-        while not self.do_exit:
-            self.draw()
-
-        pygame.quit()
-
-        if self.exit_callback is not None:
-            self.exit_callback()
-
-    def exit(self):
-        self.do_exit = True
 
     def start(self):
         self.running = True
@@ -122,7 +110,6 @@ class Scene(object):
         self.screen.fill(self.background)
         self.surface.fill(self.background)
         self.__write_pos = 30
-        self.check_events()
 
         for shape in self.shapes:
             self.draw_shape(shape)
@@ -168,6 +155,15 @@ class Scene(object):
                         print 'switch selection'
 
                     self.selected_shape = new_shape
+
+    def mouse_down(self, event):
+        self.dropdown.mouse_down(event)
+
+    def mouse_up(self, event):
+        self.dropdown.mouse_up(event)
+
+    def mouse_move(self, event):
+        self.dropdown.mouse_move(event)
 
     def check_click_shape(self, event):
         x, y = event.pos
