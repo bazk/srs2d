@@ -37,9 +37,6 @@ from .. import robot
 __log__ = logging.getLogger(__name__)
 
 class Scene(object):
-    _flipX = False
-    _flipY = False
-
     do_exit = False
     exit_callback = None
 
@@ -175,12 +172,7 @@ class Scene(object):
 
         x = ((point.x + self.center.x) * self.zoom) - self.offset[0]
         y = ((point.y + self.center.y) * self.zoom) - self.offset[1]
-
-        if self._flipX:
-            x = self.resolution[0] - x
-
-        if self._flipY:
-            y = self.resolution[1] - y
+        y = self.resolution[1] - y
 
         return (int(x), int(y))
 
@@ -188,13 +180,7 @@ class Scene(object):
         """Transform a screen point to world point."""
 
         (x, y) = point
-
-        if self._flipX:
-            x = self.resolution[0] - x
-
-        if self._flipY:
-            y = self.resolution[1] - y
-
+        y = self.resolution[1] - y
         x = (float(x + self.offset[0]) / self.zoom) - self.center.x
         y = (float(y + self.offset[1]) / self.zoom) - self.center.y
 
@@ -225,12 +211,7 @@ class Scene(object):
             center = self._to_screen(Box2D.b2Vec2(shape.center))
             radius = shape.radius * self.zoom
 
-            if shape.orientation is not None:
-                orientation = Box2D.b2Vec2(shape.orientation)
-            else:
-                orientation = None
-
-            self.draw_circle(center, radius, orientation=orientation, fill=fill, border=border)
+            self.draw_circle(center, radius, orientation=shape.orientation, fill=fill, border=border)
 
     def draw_segment(self, p1, p2, fill=None):
         if not fill:
