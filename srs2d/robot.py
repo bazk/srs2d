@@ -30,13 +30,19 @@ import physics
 __log__ = logging.getLogger(__name__)
 
 class Robot(physics.DynamicBody):
-    def __init__(self, position=(0.0, 0.0)):
+    def __init__(self, position=physics.Vector(0.0, 0.0)):
         super(Robot, self).__init__(position)
 
         self.add_shape(physics.CircleShape(radius=0.06, density=27))
 
         self.tires = DifferentialWheelsActuator(position=position, distance=0.0825, wheel_size=(0.017, 0.03))
         self.add(self.tires)
+
+        self.front_led = LED(position=physics.Vector(0.0, 0.06), color=(255,0,0))
+        self.add(self.front_led)
+
+        self.rear_led = LED(position=physics.Vector(0.0, -0.06), color=(0,0,255))
+        self.add(self.rear_led)
 
     @property
     def power(self):
@@ -53,7 +59,7 @@ class DifferentialWheelsActuator(physics.Actuator):
     DRAG = 0.9
     DRIFT = -4
 
-    def __init__(self, position=(0.0, 0.0), distance=0.0845, wheel_size=(0.017, 0.03), wheel_density=1300):
+    def __init__(self, position=physics.Vector(0.0, 0.0), distance=0.0845, wheel_size=(0.017, 0.03), wheel_density=1300):
         super(DifferentialWheelsActuator, self).__init__()
 
         self.position = position
@@ -64,8 +70,8 @@ class DifferentialWheelsActuator(physics.Actuator):
         wheel_vertices = [ (-hx, hy), (hx, hy),
                            (hx, -hy), (-hx, -hy) ]
 
-        self.wheel_left = physics.DynamicBody(position=(position[0]-(distance/2.0), position[1]))
-        self.wheel_right = physics.DynamicBody(position=(position[0]+(distance/2.0), position[1]))
+        self.wheel_left = physics.DynamicBody(position=physics.Vector(position.x-(distance/2.0), position.y))
+        self.wheel_right = physics.DynamicBody(position=physics.Vector(position.x+(distance/2.0), position.y))
 
         self.wheel_left.add_shape(physics.PolygonShape(vertices=wheel_vertices, density=wheel_density*0.03))
         self.wheel_right.add_shape(physics.PolygonShape(vertices=wheel_vertices, density=wheel_density*0.03))
@@ -134,3 +140,34 @@ class DifferentialWheelsActuator(physics.Actuator):
             wheel.apply_force(forward_normal * force, wheel.world_center, wake=True)
 
         wheel.linear_velocity = (forward_velocity * self.DRAG) + (lateral_velocity * self.DRIFT)
+
+class LED(physics.Actuator):
+    def __init__(self, position=physics.Vector(0.0, 0.0), color=(255, 0, 0)):
+        super(LED, self).__init__()
+
+        self.color = color
+        self._on = False
+
+        self._rel_position = position
+
+        self._body = physics.DynamicBody()
+        self._shape = physics.CircleShape(radius=0.0025, density=1, color=(0,0,0))
+        self._body.add_shape(self._shape)
+        self.add(self._body)
+
+    def on_added(self, parent):
+        joint = physics.WeldJoint(target=parent, target_anchor=self._rel_position)
+        self._body.add_joint(joint, anchor=physics.Vector(0.0, 0.0))
+
+    @property
+    def on(self):
+        return self._on
+
+    @on.setter
+    def on(self, value):
+        self._on = value
+
+        if self._on:
+            self._shape.color = self.color
+        else:
+            self._shape.color = (0, 0, 0)

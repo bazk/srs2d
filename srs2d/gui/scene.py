@@ -25,6 +25,7 @@ __date__ = "21 Jun 2013"
 import os
 import sys
 import time
+import random
 import logging
 import threading
 import pygame
@@ -93,7 +94,9 @@ class Scene(object):
     def add_robot(self, pos):
         rob = robot.Robot(position=self._to_world(pos))
         self.world.add(rob)
-        rob.power = (1.0, 0.8)
+        rob.power = (random.uniform(-1.0, 1.0), random.uniform(-1.0, 1.0))
+        rob.front_led.on = random.uniform(0,1) > 0.5
+        rob.rear_led.on = random.uniform(0,1) > 0.5
 
     def on_mouse_down(self, event):
         self.dropdown.on_mouse_down(event)
@@ -183,7 +186,7 @@ class Scene(object):
         x = (float(x + self.offset[0]) / self.zoom) - self.center.x
         y = (float(y + self.offset[1]) / self.zoom) - self.center.y
 
-        return Box2D.b2Vec2(x, y)
+        return physics.Vector(x, y)
 
     def draw_nodes_recursive(self, node):
         self.draw_node(node)

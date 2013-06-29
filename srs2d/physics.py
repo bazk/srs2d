@@ -80,9 +80,9 @@ class World(object):
             self._lock.release()
 
     def add(self, child):
-        self.children.append(child)
         child.on_added(self)
         child.realize(self.world)
+        self.children.append(child)
 
     def step(self):
         """Run a single physics step."""
@@ -207,7 +207,7 @@ class Node(object):
 
 
 class DynamicBody(Node):
-    def __init__(self, position=(0.0, 0.0)):
+    def __init__(self, position=Vector(0.0, 0.0)):
         super(DynamicBody, self).__init__()
         self.position = position
         self.shapes = []
@@ -222,10 +222,8 @@ class DynamicBody(Node):
         joint.on_added(self, anchor)
 
     def on_realize(self, b2World):
-        self._body = b2World.CreateDynamicBody(position=self.position)
+        self._body = b2World.CreateDynamicBody(position=self.position.to_b2Vec2())
         self._body.userData = self
-
-        self.transform = self._body.transform
 
         for shape in self.shapes:
             shape.on_realize(self._body)
@@ -272,6 +270,12 @@ class DynamicBody(Node):
 
         return self._body.ApplyForce(force.to_b2Vec2(), position.to_b2Vec2(), wake=wake)
 
+    @property
+    def transform(self):
+        if self._body is None:
+            return None
+
+        return self._body.transform
 
 class Actuator(Node):
     def __init__(self):
