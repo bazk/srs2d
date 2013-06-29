@@ -40,7 +40,7 @@ class Scene(object):
     do_exit = False
     exit_callback = None
 
-    simulator = None
+    world = None
     running = False
     do_step = False
 
@@ -76,8 +76,7 @@ class Scene(object):
         self.center = Box2D.b2Vec2(0, 0)
         self.offset = (-self.resolution[0]/2, -self.resolution[1]/2)
 
-        self.simulator = physics.Simulator()
-        self.robots = []
+        self.world = physics.World()
 
     def start(self):
         self.running = True
@@ -92,9 +91,9 @@ class Scene(object):
         return self.running
 
     def add_robot(self, pos):
-        rob = robot.Robot(self.simulator, position=self._to_world(pos))
-        rob.set_motor_power(0, 0.5)
-        self.robots.append(rob)
+        rob = robot.Robot(position=self._to_world(pos))
+        self.world.add(rob)
+        rob.power = (1.0, 0.8)
 
     def on_mouse_down(self, event):
         self.dropdown.on_mouse_down(event)
@@ -122,14 +121,14 @@ class Scene(object):
         self.dropdown.on_mouse_move(event)
 
     def _check_selection(self, event):
-        for obj in self.simulator.objects:
-            for shape in obj.shapes:
-                if isinstance(shape, physics.CircleShape):
-                    center_x, center_y = self._to_screen(Box2D.b2Vec2(shape.center))
-                    radius = shape.radius * self.zoom
+        # for obj in self.simulator.objects:
+        #     for shape in obj.shapes:
+        #         if isinstance(shape, physics.CircleShape):
+        #             center_x, center_y = self._to_screen(Box2D.b2Vec2(shape.center))
+        #             radius = shape.radius * self.zoom
 
-                    if ((event.x - center_x)**2 + (event.y - center_y)**2) <= (radius**2):
-                        return shape
+        #             if ((event.x - center_x)**2 + (event.y - center_y)**2) <= (radius**2):
+        #                 return shape
 
         return None
 
@@ -141,22 +140,22 @@ class Scene(object):
 
     def draw(self):
         if self.running or self.do_step:
-            self.simulator.time_step = 1.0 / self.target_fps
-            self.simulator.step()
+            self.world.time_step = 1.0 / self.target_fps
+            self.world.step()
             self.do_step = False
 
         self.screen.fill(self.background)
         self.surface.fill(self.background)
         self.__write_pos = 30
 
-        for obj in self.simulator.objects:
-            self.draw_object(obj)
+        for node in self.world.children:
+            self.draw_nodes_recursive(node)
 
         self.draw_circle(self._to_screen(Box2D.b2Vec2(0,0)), 0.02 * self.zoom, fill=(255,255,255))
 
         self.dropdown.draw(self.surface)
 
-        real_clock = self.simulator.clock
+        real_clock = self.world.clock
 
         self.write(str(self.clock.get_fps()), (200,80,80))
         self.write("%02d:%02d:%02d" % (int(real_clock) / 3600,
@@ -186,9 +185,16 @@ class Scene(object):
 
         return Box2D.b2Vec2(x, y)
 
-    def draw_object(self, obj):
-        for shape in obj.shapes:
-            self.draw_shape(shape)
+    def draw_nodes_recursive(self, node):
+        self.draw_node(node)
+
+        for node in node.children:
+            self.draw_nodes_recursive(node)
+
+    def draw_node(self, node):
+        if isinstance(node, physics.DynamicBody):
+            for shape in node.shapes:
+                self.draw_shape(shape)
 
     def draw_shape(self, shape):
         if shape.color is None:
@@ -196,19 +202,22 @@ class Scene(object):
         else:
             color = shape.color
 
-        if (self.selected_shape is not None) and (shape.object_id == self.selected_shape.object_id):
-            fill = (color[0], color[1], color[2], 87)
-            border = (color[0], color[1], color[2], 242)
-        else:
-            fill = (color[0], color[1], color[2], 47)
-            border = (color[0], color[1], color[2], 142)
+        # if (self.selected_shape is not None) and (shape.object_id == self.selected_shape.object_id):
+        #     fill = (color[0], color[1], color[2], 87)
+        #     border = (color[0], color[1], color[2], 242)
+        # else:
+        #     fill = (color[0], color[1], color[2], 47)
+        #     border = (color[0], color[1], color[2], 142)
+
+        fill = (color[0], color[1], color[2], 87)
+        border = (color[0], color[1], color[2], 242)
 
         if isinstance(shape, physics.PolygonShape):
-            vertices = [ self._to_screen(Box2D.b2Vec2(v)) for v in shape.vertices ]
+            vertices = [ self._to_screen(vertex) for vertex in shape.vertices ]
             self.draw_polygon(vertices, fill=fill, border=border)
 
         elif isinstance(shape, physics.CircleShape):
-            center = self._to_screen(Box2D.b2Vec2(shape.center))
+            center = self._to_screen(shape.center)
             radius = shape.radius * self.zoom
 
             self.draw_circle(center, radius, orientation=shape.orientation, fill=fill, border=border)
