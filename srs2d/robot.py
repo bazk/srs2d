@@ -33,14 +33,19 @@ class Robot(physics.DynamicBody):
     def __init__(self, position=(0.0, 0.0)):
         super(Robot, self).__init__(position)
 
-        self.initialPosition = position
-        self.initialAngle = angle
-
         self.add_shape(physics.CircleShape(radius=0.06, density=27))
 
-        self.tires = DifferentialWheelsActuator(position=position, distance=0.04225, wheel_size=(0.03, 0.017))
-        self.tires.attach(self.main_body)
-        self.add(tires)
+        self.tires = DifferentialWheelsActuator(position=position, distance=0.0825, wheel_size=(0.017, 0.03))
+        self.add(self.tires)
+
+    @property
+    def power(self):
+        return (self.tires.power_left, self.tires.power_right)
+
+    @power.setter
+    def power(self, power):
+        self.tires.power_left = power[0]
+        self.tires.power_right = power[1]
 
 class DifferentialWheelsActuator(physics.Actuator):
     MAX_SPEED = 0.4
@@ -48,8 +53,8 @@ class DifferentialWheelsActuator(physics.Actuator):
     DRAG = 0.9
     DRIFT = -4
 
-    def __init__(self, position=(0.0, 0.0), distance=0.04225, wheel_size=(0.03, 0.017), wheel_density=1300):
-        super(Robot, self).__init__()
+    def __init__(self, position=(0.0, 0.0), distance=0.0845, wheel_size=(0.017, 0.03), wheel_density=1300):
+        super(DifferentialWheelsActuator, self).__init__()
 
         self.position = position
         self.distance = distance
@@ -65,18 +70,44 @@ class DifferentialWheelsActuator(physics.Actuator):
         self.wheel_left.add_shape(physics.PolygonShape(vertices=wheel_vertices, density=wheel_density*0.03))
         self.wheel_right.add_shape(physics.PolygonShape(vertices=wheel_vertices, density=wheel_density*0.03))
 
-        self.add(wheel_left)
-        self.add(wheel_right)
+        self.add(self.wheel_left)
+        self.add(self.wheel_right)
 
-        self.power_left = 0.0
-        self.power_right = 0.0
+        self._power_left = 0.0
+        self._power_right = 0.0
 
-    def on_add(self, parent):
-        joint_left = physics.WeldJoint(target=parent, target_anchor=(-(self.distance/2.0), 0))
-        self.wheel_left.add_joint(joint_left, anchor=(0.0, 0.0))
+    @property
+    def power_left(self):
+        return self._power_left
 
-        joint_right = physics.WeldJoint(target=parent, target_anchor=((self.distance/2.0), 0))
-        self.wheel_right.add_joint(joint_right, anchor=(0.0, 0.0))
+    @power_left.setter
+    def power_left(self, value):
+        if value > 1.0:
+            self._power_left = 1.0
+        elif value < -1.0:
+            self._power_left = -1.0
+        else:
+            self._power_left = value
+
+    @property
+    def power_right(self):
+        return self._power_right
+
+    @power_right.setter
+    def power_right(self, value):
+        if value > 1.0:
+            self._power_right = 1.0
+        elif value < -1.0:
+            self._power_right = -1.0
+        else:
+            self._power_right = value
+
+    def on_added(self, parent):
+        joint_left = physics.WeldJoint(target=parent, target_anchor=physics.Vector(-(self.distance/2.0), 0))
+        self.wheel_left.add_joint(joint_left, anchor=physics.Vector(0.0, 0.0))
+
+        joint_right = physics.WeldJoint(target=parent, target_anchor=physics.Vector((self.distance/2.0), 0))
+        self.wheel_right.add_joint(joint_right, anchor=physics.Vector(0.0, 0.0))
 
     def on_step(self):
         self._step_wheel(self.wheel_left, self.power_left * self.MAX_SPEED)
@@ -84,14 +115,13 @@ class DifferentialWheelsActuator(physics.Actuator):
 
     def _step_wheel(self, wheel, desired_speed):
         """Calculate and apply forces on a tire."""
+        forward_normal = wheel.world_vector(physics.Vector(0, 1))
+        forward_speed = forward_normal.dot(wheel.linear_velocity)
+        forward_velocity = forward_normal * forward_speed
 
-        forward_normal = tire.world_vector(0, 1)
-        forward_speed = physics.dot(forward_normal, tire.linear_velocity)
-        forward_velocity = forward_speed * forward_normal
-
-        lateral_normal = tire.world_vector(1,0)
-        lateral_speed = physics.dot(lateral_normal, tire.linear_velocity)
-        lateral_velocity = lateral_speed * lateral_normal
+        lateral_normal = wheel.world_vector(physics.Vector(1,0))
+        lateral_speed = lateral_normal.dot(wheel.linear_velocity)
+        lateral_velocity = lateral_normal * lateral_speed
 
         # apply necessary force
         force = 0
@@ -101,6 +131,6 @@ class DifferentialWheelsActuator(physics.Actuator):
             force = -self.DRIVE_FORCE
 
         if force != 0:
-            tire.apply_force(force * forward_normal, tire.world_center, wake=True)
+            wheel.apply_force(forward_normal * force, wheel.world_center, wake=True)
 
-        tire.linear_velocity = (self.DRAG * forward_velocity) + (self.DRIFT * lateral_velocity)
+        wheel.linear_velocity = (forward_velocity * self.DRAG) + (lateral_velocity * self.DRIFT)
