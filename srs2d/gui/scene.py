@@ -199,6 +199,14 @@ class Scene(object):
             for shape in node.shapes:
                 self.draw_shape(shape)
 
+        elif isinstance(node, physics.RaycastSensor):
+            origin = self._to_screen(node.origin)
+            # for vertex in node.vertices:
+            #     self.draw_segment(origin, self._to_screen(vertex), (255, 0, 0, 64))
+
+            # self.surface.blit(self.font.render(str(node.values[0]), True, (255,255,255)), (origin[0] + 15, origin[1]+5))
+            # self.surface.blit(self.font.render(str(node.values[1]), True, (255,255,255)), (origin[0] + 15, origin[1]-5))
+
     def draw_shape(self, shape):
         if shape.color is None:
             color = (146, 229, 146)

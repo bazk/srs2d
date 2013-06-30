@@ -281,6 +281,60 @@ class Actuator(Node):
     def __init__(self):
         super(Actuator, self).__init__()
 
+class ActuatorBody(DynamicBody):
+    pass
+
+
+class Sensor(Node):
+    def __init__(self):
+        super(Sensor, self).__init__()
+
+class RaycastSensor(Sensor):
+    def __init__(self, origin=Vector(0.0, 0.0)):
+        super(RaycastSensor, self).__init__()
+
+        self._origin = origin
+        self._vertices = []
+
+    def on_realize(self, b2World):
+        self.world = b2World
+
+    def on_added(self, body):
+        self.body = body
+
+    def raycast(self, origin, dest):
+        callback = self._RaycastCallback(self)
+        self.world.RayCast(callback, origin, dest)
+
+    def callback(self, shape, point, normal, fraction):
+        pass
+
+    class _RaycastCallback(Box2D.b2RayCastCallback):
+        def __init__(self, parent, **kwargs):
+            Box2D.b2RayCastCallback.__init__(self)
+            self.parent = parent
+
+        def ReportFixture(self, fixture, point, normal, fraction):
+            return self.parent.callback(fixture.userData, point, normal, fraction)
+
+    @property
+    def vertices(self):
+        if self.body is None:
+            return None
+
+        transformed = []
+
+        for vertex in self._vertices:
+            transformed.append(self.body.transform * vertex.to_b2Vec2())
+
+        return transformed
+
+    @property
+    def origin(self):
+        if self.body is None:
+            return None
+
+        return self.body.transform * self._origin.to_b2Vec2()
 
 class Shape(object):
     def __init__(self, density=1, color=(255, 0, 0)):
@@ -292,7 +346,7 @@ class Shape(object):
         self.body = body
 
 class PolygonShape(Shape):
-    def __init__(self, vertices=[], density=1, color=(255, 0, 0)):
+    def __init__(self, vertices=[], density=1, color=(64, 196, 64)):
         super(PolygonShape, self).__init__(density, color)
         self._vertices = vertices
 
@@ -313,7 +367,7 @@ class PolygonShape(Shape):
         return transformed
 
 class CircleShape(Shape):
-    def __init__(self, radius=1, density=1, color=(255, 0, 0)):
+    def __init__(self, radius=1, density=1, color=(64, 196, 64)):
         super(CircleShape, self).__init__(density, color)
         self.radius = radius
 

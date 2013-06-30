@@ -29,6 +29,8 @@ import physics
 
 __log__ = logging.getLogger(__name__)
 
+D2R = math.pi / 180.0
+
 class Robot(physics.DynamicBody):
     def __init__(self, position=physics.Vector(0.0, 0.0)):
         super(Robot, self).__init__(position)
@@ -43,6 +45,9 @@ class Robot(physics.DynamicBody):
 
         self.rear_led = LED(position=physics.Vector(0.0, -0.06), color=(0,0,255))
         self.add(self.rear_led)
+
+        self.camera = DualRegionCamera(origin=physics.Vector(0.0, 0.06), look_at=physics.Vector(0.0, 1.0))
+        self.add(self.camera)
 
     @property
     def power(self):
@@ -141,23 +146,21 @@ class DifferentialWheelsActuator(physics.Actuator):
 
         wheel.linear_velocity = (forward_velocity * self.DRAG) + (lateral_velocity * self.DRIFT)
 
-class LED(physics.Actuator):
+class LED(physics.ActuatorBody):
     def __init__(self, position=physics.Vector(0.0, 0.0), color=(255, 0, 0)):
-        super(LED, self).__init__()
+        super(LED, self).__init__(position)
 
         self.color = color
         self._on = False
 
         self._rel_position = position
 
-        self._body = physics.DynamicBody()
-        self._shape = physics.CircleShape(radius=0.0025, density=1, color=(0,0,0))
-        self._body.add_shape(self._shape)
-        self.add(self._body)
+        self._shape = physics.CircleShape(radius=0.03, density=1, color=(0,0,0))
+        self.add_shape(self._shape)
 
     def on_added(self, parent):
         joint = physics.WeldJoint(target=parent, target_anchor=self._rel_position)
-        self._body.add_joint(joint, anchor=physics.Vector(0.0, 0.0))
+        self.add_joint(joint, anchor=physics.Vector(0.0, 0.0))
 
     @property
     def on(self):
@@ -171,3 +174,62 @@ class LED(physics.Actuator):
             self._shape.color = self.color
         else:
             self._shape.color = (0, 0, 0)
+
+class DualRegionCamera(physics.RaycastSensor):
+    def __init__(self, origin=physics.Vector(0.0, 0.0), look_at=physics.Vector(0.0, 0.0),
+            fov=(72 * D2R), raycast_count=36, distance=0.65):
+        super(DualRegionCamera, self).__init__(origin)
+
+        self.look_at = look_at
+        self.fov = fov
+        self.raycast_count = raycast_count
+        self.distance = distance
+
+        adjacent = float(look_at.y - origin.y)
+        opposite = float(look_at.x - origin.x)
+        hypotenuse = math.sqrt(opposite ** 2 + adjacent ** 2)
+
+        angle_between = fov / float(raycast_count)
+        angle_initial = math.asin(opposite / hypotenuse) - fov / 2.0 + angle_between / 2.0
+
+        for i in range(raycast_count):
+            angle = angle_initial + (angle_between * i)
+            vertex = physics.Vector(distance * math.sin(angle), distance * math.cos(angle))
+            self._vertices.append(vertex)
+
+        self.values = {0: 0.0, 1: 0.0}
+
+    def on_step(self):
+        self.values[0] = 0.0
+        self.values[1] = 0.0
+        counter = 0
+
+        for vertex in self._vertices:
+            self.raycast_hit = False
+            self.raycast_fraction = 1.0
+            self.raycast_led = None
+            self.raycast(self.body.transform * self._origin.to_b2Vec2(), self.body.transform * vertex.to_b2Vec2())
+
+            if self.raycast_hit:
+                region = 0 if counter < math.floor(len(self._vertices) / 2.0) else 1
+                if self.raycast_led.color == (255, 0, 0):
+                    self.values[region] += self.raycast_fraction
+                else:
+                    self.values[region] -= self.raycast_fraction
+
+            counter += 1
+
+        self.values[0] = self.values[0] / len(self._vertices)
+        self.values[1] = self.values[1] / len(self._vertices)
+
+    def callback(self, shape, point, normal, fraction):
+        if shape.body is None:
+            return fraction
+
+        if isinstance(shape.body, LED):
+            if shape.body.on:
+                self.raycast_hit = True
+                self.raycast_fraction = fraction
+                self.raycast_led = shape.body
+
+        return 0.0
