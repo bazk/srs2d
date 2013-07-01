@@ -33,18 +33,18 @@ D2R = math.pi / 180.0
 
 
 class Robot(physics.DynamicBody):
-    def __init__(self, position=physics.Vector(0.0, 0.0)):
-        super(Robot, self).__init__(position)
+    def __init__(self, position=physics.Vector(0.0, 0.0), **kwargs):
+        super(Robot, self).__init__(position, **kwargs)
 
         self.add_shape(physics.CircleShape(radius=0.06, density=27))
 
-        self.tires = DifferentialWheelsActuator(position=position, distance=0.0825, wheel_size=(0.017, 0.03))
+        self.tires = DifferentialWheelsActuator(position=position, distance=0.0825, wheel_size=(0.017, 0.03), mask_bits=0x0000)
         self.add(self.tires)
 
-        self.front_led = LED(position=physics.Vector(0.0, 0.06), color=(255,0,0))
+        self.front_led = LED(position=physics.Vector(0.0, 0.06), color=(255,0,0), mask_bits=0x0000)
         self.add(self.front_led)
 
-        self.rear_led = LED(position=physics.Vector(0.0, -0.06), color=(0,0,255))
+        self.rear_led = LED(position=physics.Vector(0.0, -0.06), color=(0,0,255), mask_bits=0x0000)
         self.add(self.rear_led)
 
         self.camera = DualRegionCamera(origin=physics.Vector(0.0, 0.06), look_at=physics.Vector(0.0, 1.0))
@@ -65,8 +65,8 @@ class DifferentialWheelsActuator(physics.Actuator):
     DRAG = 0.9
     DRIFT = -4
 
-    def __init__(self, position=physics.Vector(0.0, 0.0), distance=0.0845, wheel_size=(0.017, 0.03), wheel_density=1300):
-        super(DifferentialWheelsActuator, self).__init__()
+    def __init__(self, position=physics.Vector(0.0, 0.0), distance=0.0845, wheel_size=(0.017, 0.03), wheel_density=1300, **kwargs):
+        super(DifferentialWheelsActuator, self).__init__(**kwargs)
 
         self.position = position
         self.distance = distance
@@ -152,8 +152,8 @@ class DifferentialWheelsActuator(physics.Actuator):
             self._power_right = value
 
 class LED(physics.Actuator):
-    def __init__(self, position=physics.Vector(0.0, 0.0), color=(255, 0, 0)):
-        super(LED, self).__init__()
+    def __init__(self, position=physics.Vector(0.0, 0.0), color=(255, 0, 0), **kwargs):
+        super(LED, self).__init__(**kwargs)
 
         self.color = color
         self._on = False
@@ -185,8 +185,8 @@ class LED(physics.Actuator):
 
 class DualRegionCamera(physics.RaycastSensor):
     def __init__(self, origin=physics.Vector(0.0, 0.0), look_at=physics.Vector(0.0, 0.0),
-            fov=(72 * D2R), raycast_count=36, distance=0.65):
-        super(DualRegionCamera, self).__init__(origin)
+            fov=(72 * D2R), raycast_count=36, distance=0.65, **kwargs):
+        super(DualRegionCamera, self).__init__(origin, **kwargs)
 
         self.look_at = look_at
         self.fov = fov
@@ -218,7 +218,9 @@ class DualRegionCamera(physics.RaycastSensor):
             self.raycast_hit = False
             self.raycast_fraction = 1.0
             self.raycast_led = None
-            self.raycast(self.parent.transform * self._origin.to_b2Vec2(), self.parent.transform * vertex.to_b2Vec2())
+            self.raycast(self.raycast_callback,
+                self.parent.transform * self._origin.to_b2Vec2(),
+                self.parent.transform * vertex.to_b2Vec2())
 
             if self.raycast_hit:
                 region = 0 if counter < math.floor(len(self._vertices) / 2.0) else 1
@@ -232,7 +234,7 @@ class DualRegionCamera(physics.RaycastSensor):
         self.values[0] = self.values[0] / len(self._vertices)
         self.values[1] = self.values[1] / len(self._vertices)
 
-    def callback(self, shape, point, normal, fraction):
+    def raycast_callback(self, shape, point, normal, fraction):
         if shape.parent is None:
             return fraction
 

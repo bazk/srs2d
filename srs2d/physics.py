@@ -28,8 +28,8 @@ import Box2D
 
 __log__ = logging.getLogger(__name__)
 
-DEFAULT_CATEGORY_BITS = 0x1
-DEFAULT_MASK_BITS = 0x1
+DEFAULT_CATEGORY_BITS = 0x0001
+DEFAULT_MASK_BITS = 0xFFFF
 
 def dot(v1, v2):
     return v1[0] * v2[0] + v1[1] * v2[1]
@@ -154,9 +154,21 @@ class _ContactListener(Box2D.b2ContactListener):
 
 
 class Vector(object):
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
+    def __init__(self, x=None, y=None):
+        if x is None:
+            raise ValueError("first positional argument can not be 'None'")
+
+        if isinstance(x, Box2D.b2Vec2):
+            self.x = x.x
+            self.y = x.y
+        elif isinstance(x, tuple):
+            self.x, self.y = x
+        else:
+            if y is None:
+                raise ValueError("parameter 'y' can not be 'None'")
+
+            self.x = x
+            self.y = y
 
     def to_b2Vec2(self):
         return Box2D.b2Vec2((self.x, self.y))
@@ -180,10 +192,13 @@ class Vector(object):
         raise ArithmeticError('cannot dot product vector by non-vector')
 
 class Node(object):
-    def __init__(self):
+    def __init__(self, category_bits=None, mask_bits=None):
         self.children = []
         self.parent = None
         self.realized = False
+
+        self.category_bits = category_bits
+        self.mask_bits = mask_bits
 
     def add(self, child):
         self.children.append(child)
@@ -194,8 +209,21 @@ class Node(object):
         self.on_added(parent)
 
     def realize(self, b2World):
-        self.on_realize(b2World)
+        global DEFAULT_CATEGORY_BITS, DEFAULT_MASK_BITS
 
+        if self.category_bits is None:
+            if isinstance(self.parent, Node):
+                self.category_bits = self.parent.category_bits
+            else:
+                self.category_bits = DEFAULT_CATEGORY_BITS
+
+        if self.mask_bits is None:
+            if isinstance(self.parent, Node):
+                self.mask_bits = self.parent.mask_bits
+            else:
+                self.mask_bits = DEFAULT_MASK_BITS
+
+        self.on_realize(b2World)
         self.realized = True
 
         for child in self.children:
@@ -218,11 +246,9 @@ class Node(object):
 
 
 class DynamicBody(Node):
-    def __init__(self, position=Vector(0.0, 0.0), categoryBits=None, maskBits=None):
-        super(DynamicBody, self).__init__()
+    def __init__(self, position=Vector(0.0, 0.0), **kwargs):
+        super(DynamicBody, self).__init__(**kwargs)
         self.position = position
-        self.categoryBits = categoryBits
-        self.maskBits = maskBits
         self.shapes = []
         self.joints = []
 
@@ -234,35 +260,17 @@ class DynamicBody(Node):
         self.joints.append(joint)
         joint.added(self, anchor)
 
-    def on_added(self, parent):
-        global DEFAULT_CATEGORY_BITS, DEFAULT_MASK_BITS
-
-        super(DynamicBody, self).on_added(parent)
-
-        if self.categoryBits is None:
-            if isinstance(parent, DynamicBody):
-                self.categoryBits = parent.categoryBits
-            else:
-                self.categoryBits = DEFAULT_CATEGORY_BITS
-
-        if self.maskBits is None:
-            if isinstance(parent, DynamicBody):
-                self.maskBits = parent.maskBits
-            else:
-                self.maskBits = DEFAULT_MASK_BITS
-
     def on_realize(self, b2World):
         super(DynamicBody, self).on_realize(b2World)
 
-        self._body = b2World.CreateDynamicBody(position=self.position.to_b2Vec2(),
-            categoryBits=self.categoryBits, maskBits=self.maskBits)
+        self._body = b2World.CreateDynamicBody(position=self.position.to_b2Vec2())
         self._body.userData = self
 
         for shape in self.shapes:
-            shape.on_realize(b2World)
+            shape.realize(b2World)
 
         for joint in self.joints:
-            joint.on_realize(b2World)
+            joint.realize(b2World)
 
     def to_b2Body(self):
         return self._body
@@ -314,17 +322,17 @@ class DynamicBody(Node):
         return self._body.transform
 
 class Actuator(Node):
-    def __init__(self):
-        super(Actuator, self).__init__()
+    def __init__(self, **kwargs):
+        super(Actuator, self).__init__(**kwargs)
 
 
 class Sensor(Node):
-    def __init__(self):
-        super(Sensor, self).__init__()
+    def __init__(self, **kwargs):
+        super(Sensor, self).__init__(**kwargs)
 
 class RaycastSensor(Sensor):
-    def __init__(self, origin=Vector(0.0, 0.0)):
-        super(RaycastSensor, self).__init__()
+    def __init__(self, origin=Vector(0.0, 0.0), **kwargs):
+        super(RaycastSensor, self).__init__(**kwargs)
 
         self._origin = origin
         self._vertices = []
@@ -333,20 +341,17 @@ class RaycastSensor(Sensor):
         super(RaycastSensor, self).on_realize(b2World)
         self._world = b2World
 
-    def raycast(self, origin, dest):
-        callback = self._RaycastCallback(self)
-        self._world.RayCast(callback, origin, dest)
-
-    def callback(self, shape, point, normal, fraction):
-        pass
+    def raycast(self, callback, origin, dest):
+        cb_instance = self._RaycastCallback(callback)
+        self._world.RayCast(cb_instance, origin, dest)
 
     class _RaycastCallback(Box2D.b2RayCastCallback):
-        def __init__(self, parent, **kwargs):
+        def __init__(self, callback, **kwargs):
             Box2D.b2RayCastCallback.__init__(self)
-            self.parent = parent
+            self.callback = callback
 
         def ReportFixture(self, fixture, point, normal, fraction):
-            return self.parent.callback(fixture.userData, point, normal, fraction)
+            return self.callback(fixture.userData, Vector(point), Vector(normal), fraction)
 
     @property
     def vertices(self):
@@ -361,21 +366,23 @@ class RaycastSensor(Sensor):
     def origin(self):
         return self.parent.transform * self._origin.to_b2Vec2()
 
+
 class Shape(Node):
-    def __init__(self, density=1, color=(255, 0, 0)):
-        super(Shape, self).__init__()
+    def __init__(self, density=1, color=(64, 255, 0), **kwargs):
+        super(Shape, self).__init__(**kwargs)
         self.density = density
         self.color = color
 
 class PolygonShape(Shape):
-    def __init__(self, vertices=[], density=1, color=(64, 196, 64)):
-        super(PolygonShape, self).__init__(density, color)
+    def __init__(self, vertices=[], **kwargs):
+        super(PolygonShape, self).__init__(**kwargs)
         self._vertices = vertices
 
     def on_realize(self, b2World):
         super(PolygonShape, self).on_realize(b2World)
         self._fixture = self.parent.to_b2Body().CreatePolygonFixture(
-            vertices=self._vertices, density=self.density)
+            vertices=self._vertices, density=self.density,
+            categoryBits=self.category_bits, maskBits=self.mask_bits)
         self._fixture.userData = self
 
     @property
@@ -388,14 +395,15 @@ class PolygonShape(Shape):
         return transformed
 
 class CircleShape(Shape):
-    def __init__(self, radius=1, density=1, color=(64, 196, 64)):
-        super(CircleShape, self).__init__(density, color)
+    def __init__(self, radius=1, **kwargs):
+        super(CircleShape, self).__init__(**kwargs)
         self.radius = radius
 
     def on_realize(self, b2World):
         super(CircleShape, self).on_realize(b2World)
         self._fixture = self.parent.to_b2Body().CreateCircleFixture(
-            radius=self.radius, density=self.density)
+            radius=self.radius, density=self.density,
+            categoryBits=self.category_bits, maskBits=self.mask_bits)
         self._fixture.userData = self
 
     @property
@@ -416,10 +424,11 @@ class Joint(Node):
         pass
 
 class WeldJoint(Joint):
-    def __init__(self, target=None, target_anchor=None):
-        super(WeldJoint, self).__init__()
+    def __init__(self, target=None, target_anchor=None, **kwargs):
+        super(WeldJoint, self).__init__(**kwargs)
+
         if target is None or target_anchor is None:
-            return
+            raise ValueError("'target' and 'target_anchor' can not be 'None'")
 
         self.body1 = target
         self.body1_anchor = target_anchor
