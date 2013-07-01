@@ -214,13 +214,15 @@ class DualRegionCamera(physics.RaycastSensor):
             vertex = physics.Vector(distance * math.sin(angle), distance * math.cos(angle))
             self.vertices.append(vertex)
 
-        self.values = {0: 0.0, 1: 0.0}
+        self.values = { i: 0.0 for i in range(4) }
 
     def on_step(self):
         super(DualRegionCamera, self).on_step()
 
-        self.values[0] = 0.0
-        self.values[1] = 0.0
+        self.values[0] = 0.0 # red, region 0
+        self.values[1] = 0.0 # blue, region 0
+        self.values[2] = 0.0 # red, region 1
+        self.values[3] = 0.0 # blue, region 1
         counter = 0
 
         for vertex in self.vertices:
@@ -232,16 +234,13 @@ class DualRegionCamera(physics.RaycastSensor):
                 self.parent.transform * vertex.to_b2Vec2())
 
             if self.raycast_hit:
-                region = 0 if counter < math.floor(len(self.vertices) / 2.0) else 1
+                region = 0 if counter < math.floor(len(self.vertices) / 2.0) else 2
                 if self.raycast_led.color == (255, 0, 0):
-                    self.values[region] += self.raycast_fraction
+                    self.values[region+0] = 1.0
                 else:
-                    self.values[region] -= self.raycast_fraction
+                    self.values[region+1] = 1.0
 
             counter += 1
-
-        self.values[0] = self.values[0] / len(self.vertices)
-        self.values[1] = self.values[1] / len(self.vertices)
 
     def raycast_callback(self, shape, point, normal, fraction):
         if shape.parent is None:
