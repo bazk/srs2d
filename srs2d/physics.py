@@ -59,14 +59,16 @@ class World(object):
 
         self._lock = threading.Lock()
 
-        self.world = Box2D.b2World(gravity=(0, 0), doSleep=True)
-        self.world.destructionListener = _DestructionListener(self)
-        self.world.contactListener = _ContactListener(self)
+        self._b2World = Box2D.b2World(gravity=(0, 0), doSleep=True)
+        self._b2World.destructionListener = _DestructionListener(self)
+        self._b2World.contactListener = _ContactListener(self)
 
         self.step_count = 0.0
         self.clock = 0.0
 
         self.children = []
+
+        self.registered_callbacks = {}
 
         __log__.info("Initialization complete.")
 
@@ -82,19 +84,38 @@ class World(object):
         finally:
             self._lock.release()
 
+    def to_b2World(self):
+        return self._b2World
+
     def add(self, child):
         child.added(self)
-        child.realize(self.world)
+        child.realize(self)
         self.children.append(child)
+
+    def signal(self, signal_name, parameter=None):
+        if not signal_name in self.registered_callbacks:
+            return False
+
+        for cb in self.registered_callbacks[signal_name]:
+            if parameter is None:
+                cb()
+            else:
+                cb(parameter)
+
+    def register(self, signal_name, callback_function):
+        if not signal_name in self.registered_callbacks:
+            self.registered_callbacks[signal_name] = [callback_function]
+        else:
+            self.registered_callbacks[signal_name].append(callback_function)
 
     def step(self):
         """Run a single physics step."""
         self._lock.acquire()
 
         try:
-            self.world.Step(self.time_step, self.velocity_iterations,
+            self._b2World.Step(self.time_step, self.velocity_iterations,
                     self.position_iterations)
-            self.world.ClearForces()
+            self._b2World.ClearForces()
 
             for node in self.children:
                 node.step()
@@ -208,7 +229,7 @@ class Node(object):
         self.parent = parent
         self.on_added(parent)
 
-    def realize(self, b2World):
+    def realize(self, world):
         global DEFAULT_CATEGORY_BITS, DEFAULT_MASK_BITS
 
         if self.category_bits is None:
@@ -223,11 +244,12 @@ class Node(object):
             else:
                 self.mask_bits = DEFAULT_MASK_BITS
 
-        self.on_realize(b2World)
+        self.world = world
+        self.on_realize(world)
         self.realized = True
 
         for child in self.children:
-            child.realize(b2World)
+            child.realize(world)
 
     def step(self):
         self.on_step()
@@ -238,7 +260,7 @@ class Node(object):
     def on_added(self, parent):
         pass
 
-    def on_realize(self, b2World):
+    def on_realize(self, world):
         pass
 
     def on_step(self):
@@ -260,17 +282,17 @@ class DynamicBody(Node):
         self.joints.append(joint)
         joint.added(self, anchor)
 
-    def on_realize(self, b2World):
-        super(DynamicBody, self).on_realize(b2World)
+    def on_realize(self, world):
+        super(DynamicBody, self).on_realize(world)
 
-        self._body = b2World.CreateDynamicBody(position=self.position.to_b2Vec2())
+        self._body = world.to_b2World().CreateDynamicBody(position=self.position.to_b2Vec2())
         self._body.userData = self
 
         for shape in self.shapes:
-            shape.realize(b2World)
+            shape.realize(world)
 
         for joint in self.joints:
-            joint.realize(b2World)
+            joint.realize(world)
 
     def to_b2Body(self):
         return self._body
@@ -331,19 +353,9 @@ class Sensor(Node):
         super(Sensor, self).__init__(**kwargs)
 
 class RaycastSensor(Sensor):
-    def __init__(self, origin=Vector(0.0, 0.0), **kwargs):
-        super(RaycastSensor, self).__init__(**kwargs)
-
-        self._origin = origin
-        self._vertices = []
-
-    def on_realize(self, b2World):
-        super(RaycastSensor, self).on_realize(b2World)
-        self._world = b2World
-
     def raycast(self, callback, origin, dest):
         cb_instance = self._RaycastCallback(callback)
-        self._world.RayCast(cb_instance, origin, dest)
+        self.world.to_b2World().RayCast(cb_instance, origin, dest)
 
     class _RaycastCallback(Box2D.b2RayCastCallback):
         def __init__(self, callback, **kwargs):
@@ -352,20 +364,6 @@ class RaycastSensor(Sensor):
 
         def ReportFixture(self, fixture, point, normal, fraction):
             return self.callback(fixture.userData, Vector(point), Vector(normal), fraction)
-
-    @property
-    def vertices(self):
-        transformed = []
-
-        for vertex in self._vertices:
-            transformed.append(self.parent.transform * vertex.to_b2Vec2())
-
-        return transformed
-
-    @property
-    def origin(self):
-        return self.parent.transform * self._origin.to_b2Vec2()
-
 
 class Shape(Node):
     def __init__(self, density=1, color=(64, 255, 0), **kwargs):
@@ -378,8 +376,8 @@ class PolygonShape(Shape):
         super(PolygonShape, self).__init__(**kwargs)
         self._vertices = vertices
 
-    def on_realize(self, b2World):
-        super(PolygonShape, self).on_realize(b2World)
+    def on_realize(self, world):
+        super(PolygonShape, self).on_realize(world)
         self._fixture = self.parent.to_b2Body().CreatePolygonFixture(
             vertices=self._vertices, density=self.density,
             categoryBits=self.category_bits, maskBits=self.mask_bits)
@@ -399,8 +397,8 @@ class CircleShape(Shape):
         super(CircleShape, self).__init__(**kwargs)
         self.radius = radius
 
-    def on_realize(self, b2World):
-        super(CircleShape, self).on_realize(b2World)
+    def on_realize(self, world):
+        super(CircleShape, self).on_realize(world)
         self._fixture = self.parent.to_b2Body().CreateCircleFixture(
             radius=self.radius, density=self.density,
             categoryBits=self.category_bits, maskBits=self.mask_bits)
@@ -438,7 +436,7 @@ class WeldJoint(Joint):
         self.body2 = parent
         self.body2_anchor = anchor
 
-    def on_realize(self, b2World):
-        super(WeldJoint, self).on_realize(b2World)
-        b2World.CreateWeldJoint(bodyA=self.body1.to_b2Body(), localAnchorA=self.body1_anchor.to_b2Vec2(),
+    def on_realize(self, world):
+        super(WeldJoint, self).on_realize(world)
+        world.to_b2World().CreateWeldJoint(bodyA=self.body1.to_b2Body(), localAnchorA=self.body1_anchor.to_b2Vec2(),
                 bodyB=self.body2.to_b2Body(), localAnchorB=self.body2_anchor.to_b2Vec2())

@@ -41,14 +41,20 @@ class Robot(physics.DynamicBody):
         self.tires = DifferentialWheelsActuator(position=position, distance=0.0825, wheel_size=(0.017, 0.03), mask_bits=0x0000)
         self.add(self.tires)
 
-        self.front_led = LED(position=physics.Vector(0.0, 0.06), color=(255,0,0), mask_bits=0x0000)
+        self.front_led = LED(position=physics.Vector(0.0, 0.06), color=(255,0,0), category_bits=0x0000, mask_bits=0x0000)
         self.add(self.front_led)
 
-        self.rear_led = LED(position=physics.Vector(0.0, -0.06), color=(0,0,255), mask_bits=0x0000)
+        self.rear_led = LED(position=physics.Vector(0.0, -0.06), color=(0,0,255), category_bits=0x0000, mask_bits=0x0000)
         self.add(self.rear_led)
 
         self.camera = DualRegionCamera(origin=physics.Vector(0.0, 0.06), look_at=physics.Vector(0.0, 1.0))
         self.add(self.camera)
+
+        self.proximity = CircularProximitySensor(center=physics.Vector(0.0, 0.0), inner_radius=0.06, outer_radius=0.085, infrared_count=8)
+        self.add(self.proximity)
+
+        self.ground_color = BinaryGroundColorSensor()
+        self.add(self.ground_color)
 
     @property
     def power(self):
@@ -186,8 +192,9 @@ class LED(physics.Actuator):
 class DualRegionCamera(physics.RaycastSensor):
     def __init__(self, origin=physics.Vector(0.0, 0.0), look_at=physics.Vector(0.0, 0.0),
             fov=(72 * D2R), raycast_count=36, distance=0.65, **kwargs):
-        super(DualRegionCamera, self).__init__(origin, **kwargs)
+        super(DualRegionCamera, self).__init__(**kwargs)
 
+        self.origin = origin
         self.look_at = look_at
         self.fov = fov
         self.raycast_count = raycast_count
@@ -200,10 +207,12 @@ class DualRegionCamera(physics.RaycastSensor):
         angle_between = fov / float(raycast_count)
         angle_initial = math.asin(opposite / hypotenuse) - fov / 2.0 + angle_between / 2.0
 
+        self.vertices = []
+
         for i in range(raycast_count):
             angle = angle_initial + (angle_between * i)
             vertex = physics.Vector(distance * math.sin(angle), distance * math.cos(angle))
-            self._vertices.append(vertex)
+            self.vertices.append(vertex)
 
         self.values = {0: 0.0, 1: 0.0}
 
@@ -214,16 +223,16 @@ class DualRegionCamera(physics.RaycastSensor):
         self.values[1] = 0.0
         counter = 0
 
-        for vertex in self._vertices:
+        for vertex in self.vertices:
             self.raycast_hit = False
             self.raycast_fraction = 1.0
             self.raycast_led = None
             self.raycast(self.raycast_callback,
-                self.parent.transform * self._origin.to_b2Vec2(),
+                self.parent.transform * self.origin.to_b2Vec2(),
                 self.parent.transform * vertex.to_b2Vec2())
 
             if self.raycast_hit:
-                region = 0 if counter < math.floor(len(self._vertices) / 2.0) else 1
+                region = 0 if counter < math.floor(len(self.vertices) / 2.0) else 1
                 if self.raycast_led.color == (255, 0, 0):
                     self.values[region] += self.raycast_fraction
                 else:
@@ -231,8 +240,8 @@ class DualRegionCamera(physics.RaycastSensor):
 
             counter += 1
 
-        self.values[0] = self.values[0] / len(self._vertices)
-        self.values[1] = self.values[1] / len(self._vertices)
+        self.values[0] = self.values[0] / len(self.vertices)
+        self.values[1] = self.values[1] / len(self.vertices)
 
     def raycast_callback(self, shape, point, normal, fraction):
         if shape.parent is None:
@@ -248,3 +257,76 @@ class DualRegionCamera(physics.RaycastSensor):
                         self.raycast_led = body.parent
 
         return 0.0
+
+class CircularProximitySensor(physics.RaycastSensor):
+    def __init__(self, center, inner_radius, outer_radius, infrared_count=8, **kwargs):
+        super(CircularProximitySensor, self).__init__(**kwargs)
+
+        self.center = center
+        self.inner_radius = inner_radius
+        self.outer_radius = outer_radius
+        self.infrared_count = infrared_count
+
+        self.values = { i: 0.0 for i in range(infrared_count) }
+
+    def on_step(self):
+        super(CircularProximitySensor, self).on_step()
+
+        angle_between = 2 * math.pi / float(self.infrared_count)
+
+        for i in range(self.infrared_count):
+            self.values[i] = 0.0
+            self.raycast_hit = False
+            self.raycast_fraction = 1.0
+
+            angle = angle_between * i
+            inner = physics.Vector(self.inner_radius * math.sin(angle), self.inner_radius * math.cos(angle))
+            outer = physics.Vector(self.outer_radius * math.sin(angle), self.outer_radius * math.cos(angle))
+
+            self.raycast(self.raycast_callback,
+                self.parent.transform * inner.to_b2Vec2(),
+                self.parent.transform * outer.to_b2Vec2())
+
+            if self.raycast_hit:
+                self.values[i] = self.raycast_fraction
+
+    def raycast_callback(self, shape, point, normal, fraction):
+        if ((self.category_bits & shape.mask_bits) != 0) and ((shape.category_bits & self.mask_bits) != 0):
+            self.raycast_hit = True
+            self.raycast_fraction = fraction
+            return 0.0
+
+        return fraction
+
+class ColorPadActuator(physics.Actuator):
+    def __init__(self, center=physics.Vector(0.0, 0.0), radius=0.20, **kwargs):
+        super(ColorPadActuator, self).__init__(**kwargs)
+
+        self.center = center
+        self.radius = radius
+
+    def on_step(self):
+        super(ColorPadActuator, self).on_step()
+        self.world.signal('color-pad-notify-event', self)
+
+class BinaryGroundColorSensor(physics.Sensor):
+    def __init__(self, **kwargs):
+        super(BinaryGroundColorSensor, self).__init__(**kwargs)
+        self.partial = 0.0
+        self.value = 0.0
+
+    def on_step(self):
+        super(BinaryGroundColorSensor, self).on_step()
+        self.value = self.partial
+        self.partial = 0.0
+
+    def on_realize(self, world):
+        super(BinaryGroundColorSensor, self).on_realize(world)
+        world.register('color-pad-notify-event', self.on_color_pad_notify)
+
+    def on_color_pad_notify(self, pad):
+        x = self.parent.world_center.x
+        y = self.parent.world_center.y
+
+        if ((pad.center.x - x) ** 2 + (pad.center.y - y) ** 2) < (pad.radius ** 2):
+            self.partial = 1.0

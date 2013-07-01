@@ -79,6 +79,11 @@ class Scene(object):
 
         self.world = physics.World()
 
+        self.world.add(robot.ColorPadActuator())
+        self.world.add(robot.ColorPadActuator(center=physics.Vector(0.8, 0.2), radius=0.5))
+
+        self.robots = []
+
     def start(self):
         self.running = True
 
@@ -97,6 +102,7 @@ class Scene(object):
         rob.power = (random.uniform(-1.0, 1.0), random.uniform(-1.0, 1.0))
         rob.front_led.on = random.uniform(0,1) > 0.5
         rob.rear_led.on = random.uniform(0,1) > 0.5
+        self.robots.append(rob)
 
     def on_mouse_down(self, event):
         self.dropdown.on_mouse_down(event)
@@ -200,13 +206,19 @@ class Scene(object):
             for shape in node.shapes:
                 self.draw_shape(shape)
 
-        elif isinstance(node, physics.RaycastSensor):
-            origin = self._to_screen(node.origin)
-            for vertex in node.vertices:
-                self.draw_segment(origin, self._to_screen(vertex), (255, 0, 0, 64))
+        # elif isinstance(node, physics.RaycastSensor):
+        #     origin = self._to_screen(node.origin)
+        #     for vertex in node.vertices:
+        #         self.draw_segment(origin, self._to_screen(vertex), (255, 0, 0, 64))
 
-            self.surface.blit(self.font.render(str(node.values[0]), True, (255,255,255)), (origin[0] + 15, origin[1]+5))
-            self.surface.blit(self.font.render(str(node.values[1]), True, (255,255,255)), (origin[0] + 15, origin[1]-5))
+        #     self.surface.blit(self.font.render(str(node.values[0]), True, (255,255,255)), (origin[0] + 15, origin[1]+5))
+        #     self.surface.blit(self.font.render(str(node.values[1]), True, (255,255,255)), (origin[0] + 15, origin[1]-5))
+
+        elif isinstance(node, robot.ColorPadActuator):
+            center = self._to_screen(node.center)
+            radius = node.radius * self.zoom
+
+            self.draw_circle(center, radius, fill=(0, 255, 255, 64))
 
     def draw_shape(self, shape):
         if shape.color is None:
