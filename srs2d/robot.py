@@ -31,6 +31,7 @@ __log__ = logging.getLogger(__name__)
 
 D2R = math.pi / 180.0
 
+
 class Robot(physics.DynamicBody):
     def __init__(self, position=physics.Vector(0.0, 0.0)):
         super(Robot, self).__init__(position)
@@ -87,6 +88,43 @@ class DifferentialWheelsActuator(physics.Actuator):
         self._power_left = 0.0
         self._power_right = 0.0
 
+    def on_added(self, parent):
+        super(DifferentialWheelsActuator, self).on_added(parent)
+
+        joint_left = physics.WeldJoint(target=parent, target_anchor=physics.Vector(-(self.distance/2.0), 0))
+        self.wheel_left.add_joint(joint_left, anchor=physics.Vector(0.0, 0.0))
+
+        joint_right = physics.WeldJoint(target=parent, target_anchor=physics.Vector((self.distance/2.0), 0))
+        self.wheel_right.add_joint(joint_right, anchor=physics.Vector(0.0, 0.0))
+
+    def on_step(self):
+        super(DifferentialWheelsActuator, self).on_step()
+
+        self._step_wheel(self.wheel_left, self.power_left * self.MAX_SPEED)
+        self._step_wheel(self.wheel_right, self.power_right * self.MAX_SPEED)
+
+    def _step_wheel(self, wheel, desired_speed):
+        """Calculate and apply forces on a tire."""
+        forward_normal = wheel.world_vector(physics.Vector(0, 1))
+        forward_speed = forward_normal.dot(wheel.linear_velocity)
+        forward_velocity = forward_normal * forward_speed
+
+        lateral_normal = wheel.world_vector(physics.Vector(1,0))
+        lateral_speed = lateral_normal.dot(wheel.linear_velocity)
+        lateral_velocity = lateral_normal * lateral_speed
+
+        # apply necessary force
+        force = 0
+        if desired_speed > forward_speed:
+            force = self.DRIVE_FORCE
+        elif desired_speed < forward_speed:
+            force = -self.DRIVE_FORCE
+
+        if force != 0:
+            wheel.apply_force(forward_normal * force, wheel.world_center, wake=True)
+
+        wheel.linear_velocity = (forward_velocity * self.DRAG) + (lateral_velocity * self.DRIFT)
+
     @property
     def power_left(self):
         return self._power_left
@@ -113,54 +151,24 @@ class DifferentialWheelsActuator(physics.Actuator):
         else:
             self._power_right = value
 
-    def on_added(self, parent):
-        joint_left = physics.WeldJoint(target=parent, target_anchor=physics.Vector(-(self.distance/2.0), 0))
-        self.wheel_left.add_joint(joint_left, anchor=physics.Vector(0.0, 0.0))
-
-        joint_right = physics.WeldJoint(target=parent, target_anchor=physics.Vector((self.distance/2.0), 0))
-        self.wheel_right.add_joint(joint_right, anchor=physics.Vector(0.0, 0.0))
-
-    def on_step(self):
-        self._step_wheel(self.wheel_left, self.power_left * self.MAX_SPEED)
-        self._step_wheel(self.wheel_right, self.power_right * self.MAX_SPEED)
-
-    def _step_wheel(self, wheel, desired_speed):
-        """Calculate and apply forces on a tire."""
-        forward_normal = wheel.world_vector(physics.Vector(0, 1))
-        forward_speed = forward_normal.dot(wheel.linear_velocity)
-        forward_velocity = forward_normal * forward_speed
-
-        lateral_normal = wheel.world_vector(physics.Vector(1,0))
-        lateral_speed = lateral_normal.dot(wheel.linear_velocity)
-        lateral_velocity = lateral_normal * lateral_speed
-
-        # apply necessary force
-        force = 0
-        if desired_speed > forward_speed:
-            force = self.DRIVE_FORCE
-        elif desired_speed < forward_speed:
-            force = -self.DRIVE_FORCE
-
-        if force != 0:
-            wheel.apply_force(forward_normal * force, wheel.world_center, wake=True)
-
-        wheel.linear_velocity = (forward_velocity * self.DRAG) + (lateral_velocity * self.DRIFT)
-
-class LED(physics.ActuatorBody):
+class LED(physics.Actuator):
     def __init__(self, position=physics.Vector(0.0, 0.0), color=(255, 0, 0)):
-        super(LED, self).__init__(position)
+        super(LED, self).__init__()
 
         self.color = color
         self._on = False
-
         self._rel_position = position
 
+        self._body = physics.DynamicBody()
+        self.add(self._body)
+
         self._shape = physics.CircleShape(radius=0.03, density=1, color=(0,0,0))
-        self.add_shape(self._shape)
+        self._body.add_shape(self._shape)
 
     def on_added(self, parent):
+        super(LED, self).on_added(parent)
         joint = physics.WeldJoint(target=parent, target_anchor=self._rel_position)
-        self.add_joint(joint, anchor=physics.Vector(0.0, 0.0))
+        self._body.add_joint(joint, anchor=physics.Vector(0.0, 0.0))
 
     @property
     def on(self):
@@ -200,6 +208,8 @@ class DualRegionCamera(physics.RaycastSensor):
         self.values = {0: 0.0, 1: 0.0}
 
     def on_step(self):
+        super(DualRegionCamera, self).on_step()
+
         self.values[0] = 0.0
         self.values[1] = 0.0
         counter = 0
@@ -208,7 +218,7 @@ class DualRegionCamera(physics.RaycastSensor):
             self.raycast_hit = False
             self.raycast_fraction = 1.0
             self.raycast_led = None
-            self.raycast(self.body.transform * self._origin.to_b2Vec2(), self.body.transform * vertex.to_b2Vec2())
+            self.raycast(self.parent.transform * self._origin.to_b2Vec2(), self.parent.transform * vertex.to_b2Vec2())
 
             if self.raycast_hit:
                 region = 0 if counter < math.floor(len(self._vertices) / 2.0) else 1
@@ -223,13 +233,16 @@ class DualRegionCamera(physics.RaycastSensor):
         self.values[1] = self.values[1] / len(self._vertices)
 
     def callback(self, shape, point, normal, fraction):
-        if shape.body is None:
+        if shape.parent is None:
             return fraction
 
-        if isinstance(shape.body, LED):
-            if shape.body.on:
-                self.raycast_hit = True
-                self.raycast_fraction = fraction
-                self.raycast_led = shape.body
+        body = shape.parent
+        if isinstance(body, physics.DynamicBody):
+            if body.parent is not None:
+                if isinstance(body.parent, LED):
+                    if body.parent.on:
+                        self.raycast_hit = True
+                        self.raycast_fraction = fraction
+                        self.raycast_led = body.parent
 
         return 0.0

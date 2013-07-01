@@ -28,6 +28,9 @@ import Box2D
 
 __log__ = logging.getLogger(__name__)
 
+DEFAULT_CATEGORY_BITS = 0x1
+DEFAULT_MASK_BITS = 0x1
+
 def dot(v1, v2):
     return v1[0] * v2[0] + v1[1] * v2[1]
 
@@ -80,7 +83,7 @@ class World(object):
             self._lock.release()
 
     def add(self, child):
-        child.on_added(self)
+        child.added(self)
         child.realize(self.world)
         self.children.append(child)
 
@@ -179,13 +182,21 @@ class Vector(object):
 class Node(object):
     def __init__(self):
         self.children = []
+        self.parent = None
+        self.realized = False
 
     def add(self, child):
         self.children.append(child)
-        child.on_added(self)
+        child.added(self)
+
+    def added(self, parent):
+        self.parent = parent
+        self.on_added(parent)
 
     def realize(self, b2World):
         self.on_realize(b2World)
+
+        self.realized = True
 
         for child in self.children:
             child.realize(b2World)
@@ -207,29 +218,54 @@ class Node(object):
 
 
 class DynamicBody(Node):
-    def __init__(self, position=Vector(0.0, 0.0)):
+    def __init__(self, position=Vector(0.0, 0.0), categoryBits=None, maskBits=None):
         super(DynamicBody, self).__init__()
         self.position = position
+        self.categoryBits = categoryBits
+        self.maskBits = maskBits
         self.shapes = []
         self.joints = []
 
     def add_shape(self, shape):
         self.shapes.append(shape)
-        shape.on_added(self)
+        shape.added(self)
 
     def add_joint(self, joint, anchor=Vector(0.0, 0.0)):
         self.joints.append(joint)
-        joint.on_added(self, anchor)
+        joint.added(self, anchor)
+
+    def on_added(self, parent):
+        global DEFAULT_CATEGORY_BITS, DEFAULT_MASK_BITS
+
+        super(DynamicBody, self).on_added(parent)
+
+        if self.categoryBits is None:
+            if isinstance(parent, DynamicBody):
+                self.categoryBits = parent.categoryBits
+            else:
+                self.categoryBits = DEFAULT_CATEGORY_BITS
+
+        if self.maskBits is None:
+            if isinstance(parent, DynamicBody):
+                self.maskBits = parent.maskBits
+            else:
+                self.maskBits = DEFAULT_MASK_BITS
 
     def on_realize(self, b2World):
-        self._body = b2World.CreateDynamicBody(position=self.position.to_b2Vec2())
+        super(DynamicBody, self).on_realize(b2World)
+
+        self._body = b2World.CreateDynamicBody(position=self.position.to_b2Vec2(),
+            categoryBits=self.categoryBits, maskBits=self.maskBits)
         self._body.userData = self
 
         for shape in self.shapes:
-            shape.on_realize(self._body)
+            shape.on_realize(b2World)
 
         for joint in self.joints:
             joint.on_realize(b2World)
+
+    def to_b2Body(self):
+        return self._body
 
     @property
     def linear_velocity(self):
@@ -281,9 +317,6 @@ class Actuator(Node):
     def __init__(self):
         super(Actuator, self).__init__()
 
-class ActuatorBody(DynamicBody):
-    pass
-
 
 class Sensor(Node):
     def __init__(self):
@@ -297,14 +330,12 @@ class RaycastSensor(Sensor):
         self._vertices = []
 
     def on_realize(self, b2World):
-        self.world = b2World
-
-    def on_added(self, body):
-        self.body = body
+        super(RaycastSensor, self).on_realize(b2World)
+        self._world = b2World
 
     def raycast(self, origin, dest):
         callback = self._RaycastCallback(self)
-        self.world.RayCast(callback, origin, dest)
+        self._world.RayCast(callback, origin, dest)
 
     def callback(self, shape, point, normal, fraction):
         pass
@@ -319,50 +350,40 @@ class RaycastSensor(Sensor):
 
     @property
     def vertices(self):
-        if self.body is None:
-            return None
-
         transformed = []
 
         for vertex in self._vertices:
-            transformed.append(self.body.transform * vertex.to_b2Vec2())
+            transformed.append(self.parent.transform * vertex.to_b2Vec2())
 
         return transformed
 
     @property
     def origin(self):
-        if self.body is None:
-            return None
+        return self.parent.transform * self._origin.to_b2Vec2()
 
-        return self.body.transform * self._origin.to_b2Vec2()
-
-class Shape(object):
+class Shape(Node):
     def __init__(self, density=1, color=(255, 0, 0)):
+        super(Shape, self).__init__()
         self.density = density
         self.color = color
-        self.body = None
-
-    def on_added(self, body):
-        self.body = body
 
 class PolygonShape(Shape):
     def __init__(self, vertices=[], density=1, color=(64, 196, 64)):
         super(PolygonShape, self).__init__(density, color)
         self._vertices = vertices
 
-    def on_realize(self, b2Body):
-        self._fixture = b2Body.CreatePolygonFixture(vertices=self._vertices, density=self.density)
+    def on_realize(self, b2World):
+        super(PolygonShape, self).on_realize(b2World)
+        self._fixture = self.parent.to_b2Body().CreatePolygonFixture(
+            vertices=self._vertices, density=self.density)
         self._fixture.userData = self
 
     @property
     def vertices(self):
-        if self.body is None:
-            return None
-
         transformed = []
 
         for vertex in self._vertices:
-            transformed.append(self.body.transform * vertex)
+            transformed.append(self.parent.transform * vertex)
 
         return transformed
 
@@ -371,30 +392,32 @@ class CircleShape(Shape):
         super(CircleShape, self).__init__(density, color)
         self.radius = radius
 
-    def on_realize(self, b2Body):
-        self._fixture = b2Body.CreateCircleFixture(radius=self.radius, density=self.density)
+    def on_realize(self, b2World):
+        super(CircleShape, self).on_realize(b2World)
+        self._fixture = self.parent.to_b2Body().CreateCircleFixture(
+            radius=self.radius, density=self.density)
         self._fixture.userData = self
 
     @property
     def center(self):
-        if self.body is None:
-            return None
-
-        return self.body.transform * self._fixture.shape.pos
+        return self.parent.transform * self._fixture.shape.pos
 
     @property
     def orientation(self):
-        if self.body is None:
-            return None
-
-        return self.body.transform.R.col2
+        return self.parent.transform.R.col2
 
 
 class Joint(Node):
-    pass
+    def added(self, parent, anchor):
+        self.parent = parent
+        self.on_added(parent, anchor)
+
+    def on_added(self, parent, anchor):
+        pass
 
 class WeldJoint(Joint):
     def __init__(self, target=None, target_anchor=None):
+        super(WeldJoint, self).__init__()
         if target is None or target_anchor is None:
             return
 
@@ -402,9 +425,11 @@ class WeldJoint(Joint):
         self.body1_anchor = target_anchor
 
     def on_added(self, parent, anchor):
+        super(WeldJoint, self).on_added(parent, anchor)
         self.body2 = parent
         self.body2_anchor = anchor
 
     def on_realize(self, b2World):
-        b2World.CreateWeldJoint(bodyA=self.body1._body, localAnchorA=self.body1_anchor.to_b2Vec2(),
-                bodyB=self.body2._body, localAnchorB=self.body2_anchor.to_b2Vec2())
+        super(WeldJoint, self).on_realize(b2World)
+        b2World.CreateWeldJoint(bodyA=self.body1.to_b2Body(), localAnchorA=self.body1_anchor.to_b2Vec2(),
+                bodyB=self.body2.to_b2Body(), localAnchorB=self.body2_anchor.to_b2Vec2())

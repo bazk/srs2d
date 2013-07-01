@@ -189,10 +189,11 @@ class Scene(object):
         return physics.Vector(x, y)
 
     def draw_nodes_recursive(self, node):
-        self.draw_node(node)
+        if node.realized:
+            self.draw_node(node)
 
-        for node in node.children:
-            self.draw_nodes_recursive(node)
+            for node in node.children:
+                self.draw_nodes_recursive(node)
 
     def draw_node(self, node):
         if isinstance(node, physics.DynamicBody):
@@ -201,11 +202,11 @@ class Scene(object):
 
         elif isinstance(node, physics.RaycastSensor):
             origin = self._to_screen(node.origin)
-            # for vertex in node.vertices:
-            #     self.draw_segment(origin, self._to_screen(vertex), (255, 0, 0, 64))
+            for vertex in node.vertices:
+                self.draw_segment(origin, self._to_screen(vertex), (255, 0, 0, 64))
 
-            # self.surface.blit(self.font.render(str(node.values[0]), True, (255,255,255)), (origin[0] + 15, origin[1]+5))
-            # self.surface.blit(self.font.render(str(node.values[1]), True, (255,255,255)), (origin[0] + 15, origin[1]-5))
+            self.surface.blit(self.font.render(str(node.values[0]), True, (255,255,255)), (origin[0] + 15, origin[1]+5))
+            self.surface.blit(self.font.render(str(node.values[1]), True, (255,255,255)), (origin[0] + 15, origin[1]-5))
 
     def draw_shape(self, shape):
         if shape.color is None:
