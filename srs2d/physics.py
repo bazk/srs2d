@@ -212,6 +212,21 @@ class Vector(object):
 
         raise ArithmeticError('cannot dot product vector by non-vector')
 
+    def __str__(self):
+        return "(%.2f, %.2f)" % (self.x, self.y)
+
+class BoundingRectangle(object):
+    def __init__(self, low, high):
+        self.low = low
+        self.high = high
+
+    def union(self, other):
+        if other is not None:
+            if other.low.x < self.low.x: self.low.x = other.low.x
+            if other.low.y < self.low.y: self.low.y = other.low.y
+            if other.high.x > self.high.x: self.high.x = other.high.x
+            if other.high.y > self.high.y: self.high.y = other.high.y
+
 class Node(object):
     def __init__(self, category_bits=None, mask_bits=None):
         self.children = []
@@ -266,6 +281,42 @@ class Node(object):
     def on_step(self):
         pass
 
+    def bounding_rectangle(self):
+        rect = None
+
+        for child in self.children:
+            child_rect = child.bounding_rectangle()
+
+            if child_rect is None:
+                continue
+
+            if rect is None:
+                rect = child_rect
+            else:
+                rect.union(child_rect)
+
+        return rect
+
+class Object(Node):
+    def __init__(self, **kwargs):
+        super(Object, self).__init__(**kwargs)
+
+        self.attributes = []
+
+    def add_attribute(self, obj, key, **kwargs):
+        attr_def = AttrDef(obj, key, **kwargs)
+        self.attributes.append(attr_def)
+
+class AttrDef(object):
+    def __init__(self, obj, key, read_only=True):
+        self.obj = obj
+        self.key = key
+        self.read_only = read_only
+        self.getter = getattr(obj, 'get_'+key)
+        if not self.read_only:
+            self.setter = getattr(obj, 'set_'+key)
+        else:
+            self.setter = None
 
 class DynamicBody(Node):
     def __init__(self, position=Vector(0.0, 0.0), **kwargs):
@@ -273,6 +324,8 @@ class DynamicBody(Node):
         self.position = position
         self.shapes = []
         self.joints = []
+        self._body = None
+        self._world_center = Vector(0, 0)
 
     def add_shape(self, shape):
         self.shapes.append(shape)
@@ -296,6 +349,33 @@ class DynamicBody(Node):
 
     def to_b2Body(self):
         return self._body
+
+    def bounding_rectangle(self):
+        rect = None
+
+        for shape in self.shapes:
+            shape_rect = shape.bounding_rectangle()
+
+            if shape_rect is None:
+                continue
+
+            if rect is None:
+                rect = shape_rect
+            else:
+                rect.union(shape_rect)
+
+        for child in self.children:
+            child_rect = child.bounding_rectangle()
+
+            if child_rect is None:
+                continue
+
+            if rect is None:
+                rect = child_rect
+            else:
+                rect.union(child_rect)
+
+        return rect
 
     @property
     def linear_velocity(self):
@@ -327,8 +407,10 @@ class DynamicBody(Node):
             return Vector(0.0, 0.0)
 
         center = self._body.worldCenter
+        self._world_center.x = center.x
+        self._world_center.y = center.y
 
-        return Vector(center.x, center.y)
+        return self._world_center
 
     def apply_force(self, force, position, wake=True):
         if self._body is None:
@@ -392,6 +474,21 @@ class PolygonShape(Shape):
 
         return transformed
 
+    def bounding_rectangle(self):
+        vertices = self.vertices
+        low = Vector(0, 0)
+        high = Vector(0, 0)
+        low.x, low.y = (vertices[0].x, vertices[0].y)
+        high.x, high.y = (vertices[0].x, vertices[0].y)
+
+        for vertex in vertices[1:]:
+            if vertex.x < low.x:  low.x = vertex.x
+            if vertex.y < low.y:  low.y = vertex.y
+            if vertex.x > high.x: high.x = vertex.x
+            if vertex.y > high.y: high.y = vertex.y
+
+        return BoundingRectangle(low, high)
+
 class CircleShape(Shape):
     def __init__(self, radius=1, **kwargs):
         super(CircleShape, self).__init__(**kwargs)
@@ -412,6 +509,11 @@ class CircleShape(Shape):
     def orientation(self):
         return self.parent.transform.R.col2
 
+    def bounding_rectangle(self):
+        center = self.center
+        low = Vector(center.x - self.radius, center.y - self.radius)
+        high = Vector(center.x + self.radius, center.y + self.radius)
+        return BoundingRectangle(low, high)
 
 class Joint(Node):
     def added(self, parent, anchor):

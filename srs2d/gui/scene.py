@@ -47,7 +47,8 @@ class Scene(object):
 
     target_fps = 30.0
 
-    selected_shape = None
+    selected_obj = None
+    selection_change_callback = None
 
     def __init__(self, background=(0,0,0), resolution=(800,600)):
         self.background = background
@@ -99,9 +100,9 @@ class Scene(object):
     def add_robot(self, pos):
         rob = robot.Robot(position=self._to_world(pos))
         self.world.add(rob)
-        rob.power = (random.uniform(-1.0, 1.0), random.uniform(-1.0, 1.0))
-        rob.front_led.on = random.uniform(0,1) > 0.5
-        rob.rear_led.on = random.uniform(0,1) > 0.5
+        # rob.power = (random.uniform(-1.0, 1.0), random.uniform(-1.0, 1.0))
+        # rob.front_led.on = random.uniform(0,1) > 0.5
+        # rob.rear_led.on = random.uniform(0,1) > 0.5
         self.robots.append(rob)
 
     def on_mouse_down(self, event):
@@ -110,34 +111,33 @@ class Scene(object):
     def on_mouse_up(self, event):
         if not self.dropdown.on_mouse_up(event):
             if event.button == 1:
-                new_shape = self._check_selection(event)
+                new_obj = self._check_selection(event)
 
-                if new_shape is not None and self.selected_shape is not None and \
-                        new_shape.object_id == self.selected_shape.object_id:
-                    return True
+                if new_obj != self.selected_obj:
+                    if self.selection_change_callback is not None:
+                        self.selection_change_callback(new_obj)
 
-                if new_shape is not None:
-                    self.on_select_shape(new_shape)
+                self.selected_obj = new_obj
 
-                if self.selected_shape is not None:
-                    self.on_deselect_shape(self.selected_shape)
-
-                self.selected_shape = new_shape
-
-                return (new_shape is not None)
+                return (self.selected_obj is not None)
 
     def on_mouse_move(self, event):
         self.dropdown.on_mouse_move(event)
 
     def _check_selection(self, event):
-        # for obj in self.simulator.objects:
-        #     for shape in obj.shapes:
-        #         if isinstance(shape, physics.CircleShape):
-        #             center_x, center_y = self._to_screen(Box2D.b2Vec2(shape.center))
-        #             radius = shape.radius * self.zoom
+        for obj in self.world.children:
+            if not isinstance(obj, physics.Object):
+                continue
 
-        #             if ((event.x - center_x)**2 + (event.y - center_y)**2) <= (radius**2):
-        #                 return shape
+            square = obj.bounding_rectangle()
+
+            # convert to screen points (swap high_y and low_y because of the screen y-flip)
+            low_x, high_y = self._to_screen(square.low)
+            high_x, low_y = self._to_screen(square.high)
+
+            if (event.x >= low_x) and (event.y >= low_y) and \
+               (event.x <= high_x) and (event.y <= high_y):
+                return obj
 
         return None
 
@@ -202,6 +202,16 @@ class Scene(object):
                 self.draw_nodes_recursive(node)
 
     def draw_node(self, node):
+        if node == self.selected_obj:
+            square = node.bounding_rectangle()
+            vertices = [
+                self._to_screen(square.low),
+                self._to_screen(physics.Vector(square.high.x, square.low.y)),
+                self._to_screen(square.high),
+                self._to_screen(physics.Vector(square.low.x, square.high.y))
+            ]
+            self.draw_polygon(vertices, border=(64, 0, 255, 255))
+
         if isinstance(node, physics.DynamicBody):
             for shape in node.shapes:
                 self.draw_shape(shape)

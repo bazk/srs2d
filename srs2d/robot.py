@@ -31,10 +31,61 @@ __log__ = logging.getLogger(__name__)
 
 D2R = math.pi / 180.0
 
-
-class Robot(physics.DynamicBody):
+class Robot(physics.Object):
     def __init__(self, position=physics.Vector(0.0, 0.0), **kwargs):
-        super(Robot, self).__init__(position, **kwargs)
+        super(Robot, self).__init__(**kwargs)
+
+        self.id = id(self)
+
+        self._body = RobotBody(position=position)
+        self.add(self._body)
+
+        self.add_attribute(self, 'id')
+        self.add_attribute(self, 'power', read_only=False)
+        self.add_attribute(self, 'position')
+        self.add_attribute(self, 'front_led', read_only=False)
+        self.add_attribute(self, 'rear_led', read_only=False)
+        self.add_attribute(self, 'camera')
+        self.add_attribute(self, 'proximity')
+        self.add_attribute(self, 'ground')
+
+    def get_id(self):
+        return self.id
+
+    def get_power(self):
+        return (self._body.tires.power_left, self._body.tires.power_right)
+
+    def set_power(self, power):
+        self._body.tires.power_left = power[0]
+        self._body.tires.power_right = power[1]
+
+    def get_position(self):
+        return self._body.world_center
+
+    def get_front_led(self):
+        return self._body.front_led.on
+
+    def set_front_led(self, value):
+        self._body.front_led.on = value
+
+    def get_rear_led(self):
+        return self._body.rear_led.on
+
+    def set_rear_led(self, value):
+        self._body.rear_led.on = value
+
+    def get_camera(self):
+        return self._body.camera.values
+
+    def get_proximity(self):
+        return self._body.proximity.values
+
+    def get_ground(self):
+        return self._body.ground_color.value
+
+class RobotBody(physics.DynamicBody):
+    def __init__(self, position=physics.Vector(0.0, 0.0), **kwargs):
+        super(RobotBody, self).__init__(position, **kwargs)
 
         self.add_shape(physics.CircleShape(radius=0.06, density=27))
 
@@ -55,15 +106,6 @@ class Robot(physics.DynamicBody):
 
         self.ground_color = BinaryGroundColorSensor()
         self.add(self.ground_color)
-
-    @property
-    def power(self):
-        return (self.tires.power_left, self.tires.power_right)
-
-    @power.setter
-    def power(self, power):
-        self.tires.power_left = power[0]
-        self.tires.power_right = power[1]
 
 class DifferentialWheelsActuator(physics.Actuator):
     MAX_SPEED = 0.4

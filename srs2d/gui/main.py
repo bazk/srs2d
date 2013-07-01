@@ -28,6 +28,7 @@ import gobject
 import threading
 import logging
 import scene
+from .. import physics
 
 __log__ = logging.getLogger(__name__)
 
@@ -89,6 +90,9 @@ class Main(gtk.Window):
         area_event_box.add(area)
         hbox.pack_start(area_event_box, expand=True, fill=False)
 
+        attr_view = ObjectAttributesTreeView()
+        hbox.pack_end(attr_view.get_view(), expand=False, fill=True)
+
         area.realize()
 
         # Force SDL to write on our drawing area
@@ -99,6 +103,7 @@ class Main(gtk.Window):
         gtk.gdk.flush()
 
         self.scene = scene.Scene(resolution=self.scene_resolution)
+        self.scene.selection_change_callback = attr_view.on_selection_change
         gobject.idle_add(self.draw_scene)
 
         self.show_all()
@@ -150,3 +155,62 @@ class Main(gtk.Window):
     def on_mouse_move(self, widget, event):
         if self.scene is not None:
             self.scene.on_mouse_move(event)
+
+class ObjectAttributesTreeView():
+    def __init__(self):
+        self.store = gtk.TreeStore(str, object)
+
+        self.view = gtk.TreeView(self.store)
+        self.view.set_size_request(230, 120)
+
+        self.renderer = {}
+        self.column = {}
+
+        self.renderer0 = gtk.CellRendererText()
+        self.column0 = gtk.TreeViewColumn('Key', self.renderer0, text=0)
+        self.view.append_column(self.column0)
+
+        self.renderer1 = gtk.CellRendererText()
+        self.renderer1.connect('edited', self.cell_edited, self.store)
+        self.column1 = gtk.TreeViewColumn('Value', self.renderer1)
+        self.column1.set_cell_data_func(self.renderer1, self.cell_data)
+        self.view.append_column(self.column1)
+
+    def get_view(self):
+        return self.view
+
+    def on_selection_change(self, obj):
+        self.store.clear()
+
+        if obj is not None:
+            for attr in obj.attributes:
+                # value = attr.getter()
+
+                # if isinstance(value, tuple):
+                #     root = self.store.append(None, (attr.key, value, attr))
+                #     i = 0
+                #     for part in value:
+                #         self.store.append(root, (i, value, attr))
+                #         i += 1
+
+                # elif isinstance(value, physics.Vector):
+                #     x, y = (value.x, value.y)
+                #     root = self.store.append(None, (attr.key, value, attr))
+                #     self.store.append(root, ('x', value, attr))
+                #     self.store.append(root, ('y', value, attr))
+
+                # else:
+                self.store.append(None, (attr.key, attr))
+
+    def cell_data(self, column, cell, model, iter):
+        key = model.get_value(iter, 0)
+        attr = model.get_value(iter, 1)
+        cell.set_property('editable', not attr.read_only)
+        cell.set_property('text', attr.getter())
+
+    def cell_edited(self, cell, path, new_text, model):
+        row = model[path]
+        key = row[0]
+        attr = row[1]
+        attr.setter(eval(new_text))
+        cell.set_property('text', attr.getter())
