@@ -34,7 +34,7 @@ D2R = math.pi / 180.0
 
 class Robot(physics.DynamicBody):
     def __init__(self, position=physics.Vector(0.0, 0.0), **kwargs):
-        super(Robot, self).__init__(position, **kwargs)
+        super(Robot, self).__init__(position=position, **kwargs)
 
         self.add_shape(physics.CircleShape(radius=0.06, density=27))
 

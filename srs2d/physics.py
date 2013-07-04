@@ -290,18 +290,14 @@ class AttrDef(object):
         else:
             self.setter = None
 
-class DynamicBody(Node):
+class Body(Node):
     def __init__(self, position=Vector(0.0, 0.0), **kwargs):
-        super(DynamicBody, self).__init__(**kwargs)
+        super(Body, self).__init__(**kwargs)
         self.position = position
         self.shapes = []
         self.joints = []
-        self.controller = None
         self._body = None
         self._world_center = Vector(0, 0)
-
-        self.connect('realize', self.on_realize)
-        self.connect('think', self.on_think)
 
     def add_shape(self, shape):
         self.shapes.append(shape)
@@ -310,24 +306,6 @@ class DynamicBody(Node):
     def add_joint(self, joint, anchor=Vector(0.0, 0.0)):
         self.joints.append(joint)
         joint.added(self, anchor)
-
-    def set_controller(self, controller):
-        self.controller = controller
-        controller.added(self)
-
-    def on_realize(self, world):
-        self._body = world.to_b2World().CreateDynamicBody(position=self.position.to_b2Vec2())
-        self._body.userData = self
-
-        for shape in self.shapes:
-            shape.realize(world)
-
-        for joint in self.joints:
-            joint.realize(world)
-
-    def on_think(self):
-        if self.controller is not None:
-            self.controller.think()
 
     def to_b2Body(self):
         return self._body
@@ -359,22 +337,6 @@ class DynamicBody(Node):
 
         return rect
 
-    @property
-    def linear_velocity(self):
-        if self._body is None:
-            return Vector(0.0, 0.0)
-
-        vel = self._body.linearVelocity
-
-        return Vector(vel.x, vel.y)
-
-    @linear_velocity.setter
-    def linear_velocity(self, vector):
-        if self._body is None:
-            return
-
-        self._body.linearVelocity = vector.to_b2Vec2()
-
     def world_vector(self, local_vector):
         if self._body is None:
             return local_vector
@@ -394,18 +356,76 @@ class DynamicBody(Node):
 
         return self._world_center
 
-    def apply_force(self, force, position, wake=True):
-        if self._body is None:
-            return
-
-        return self._body.ApplyForce(force.to_b2Vec2(), position.to_b2Vec2(), wake=wake)
-
     @property
     def transform(self):
         if self._body is None:
             return None
 
         return self._body.transform
+
+class DynamicBody(Body):
+    def __init__(self, **kwargs):
+        super(DynamicBody, self).__init__(**kwargs)
+        self.controller = None
+
+        self.connect('realize', self.on_realize)
+        self.connect('think', self.on_think)
+
+    def set_controller(self, controller):
+        self.controller = controller
+        controller.added(self)
+
+    def on_realize(self, world):
+        self._body = world.to_b2World().CreateDynamicBody(position=self.position.to_b2Vec2())
+        self._body.userData = self
+
+        for shape in self.shapes:
+            shape.realize(world)
+
+        for joint in self.joints:
+            joint.realize(world)
+
+    def on_think(self):
+        if self.controller is not None:
+            self.controller.think()
+
+    @property
+    def linear_velocity(self):
+        if self._body is None:
+            return Vector(0.0, 0.0)
+
+        vel = self._body.linearVelocity
+
+        return Vector(vel.x, vel.y)
+
+    @linear_velocity.setter
+    def linear_velocity(self, vector):
+        if self._body is None:
+            return
+
+        self._body.linearVelocity = vector.to_b2Vec2()
+
+    def apply_force(self, force, position, wake=True):
+        if self._body is None:
+            return
+
+        return self._body.ApplyForce(force.to_b2Vec2(), position.to_b2Vec2(), wake=wake)
+
+class StaticBody(Body):
+    def __init__(self, **kwargs):
+        super(StaticBody, self).__init__(**kwargs)
+        self.connect('realize', self.on_realize)
+
+    def on_realize(self, world):
+        self._body = world.to_b2World().CreateStaticBody(position=self.position.to_b2Vec2())
+        self._body.userData = self
+
+        for shape in self.shapes:
+            shape.realize(world)
+
+        for joint in self.joints:
+            joint.realize(world)
+
 
 class Actuator(Node):
     def __init__(self, **kwargs):

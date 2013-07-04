@@ -25,6 +25,7 @@ __date__ = "21 Jun 2013"
 import os
 import sys
 import time
+import math
 import random
 import logging
 import threading
@@ -74,16 +75,46 @@ class Scene(object):
         self.dropdown = dropdown.DropDown(self.font)
         self.dropdown.add_item('Add robot', callback=self.add_robot)
 
-        self.zoom = 180
+        self.zoom = 120
         self.center = Box2D.b2Vec2(0, 0)
         self.offset = (-self.resolution[0]/2, -self.resolution[1]/2)
 
         self.world = physics.World()
 
-        self.world.add(robot.ColorPadActuator())
-        self.world.add(robot.ColorPadActuator(center=physics.Vector(0.8, 0.2), radius=0.5))
+        D = [1.2, 1.5, 1.9, 2.3, 2.7]
+        H = 4.20
+        W = random.uniform(4.20, 4.90)
+        d = D[int(math.floor(random.uniform(0, 4)))]
+        x = math.sqrt(((d / 2.0) ** 2) / 2.0)
+        self.world.add(robot.ColorPadActuator(center=physics.Vector(-x, x), radius=0.27))
+        self.world.add(robot.ColorPadActuator(center=physics.Vector(x, -x), radius=0.27))
 
-        self.robots = []
+        VERTICAL_WALL_VERTICES = [ (-0.01, H/2.0), (0.01, H/2.0),
+                                   (0.01, -H/2.0), (-0.01, -H/2.0) ]
+
+        HORIZONTAL_WALL_VERTICES = [ (-W/2.0-0.01, 0.01), (W/2.0+0.01, 0.01),
+                                     (W/2.0+0.01, -0.01), (-W/2.0-0.01, -0.01) ]
+
+        wall = physics.StaticBody(position=physics.Vector(-W/2.0, 0))
+        wall.add_shape(physics.PolygonShape(vertices=VERTICAL_WALL_VERTICES))
+        self.world.add(wall)
+
+        wall = physics.StaticBody(position=physics.Vector(0.0, -H/2.0))
+        wall.add_shape(physics.PolygonShape(vertices=HORIZONTAL_WALL_VERTICES))
+        self.world.add(wall)
+
+        wall = physics.StaticBody(position=physics.Vector(W/2.0, 0))
+        wall.add_shape(physics.PolygonShape(vertices=VERTICAL_WALL_VERTICES))
+        self.world.add(wall)
+
+        wall = physics.StaticBody(position=physics.Vector(0.0, H/2.0))
+        wall.add_shape(physics.PolygonShape(vertices=HORIZONTAL_WALL_VERTICES))
+        self.world.add(wall)
+
+        NUM_ROBOTS = 12
+        self.robots = [robot.Robot(position=physics.Vector( random.uniform(-W/2.0+0.12,W/2.0-0.12), random.uniform(-H/2.0+0.12, H/2.0-0.12) )) for i in range(NUM_ROBOTS)]
+        for rob in self.robots:
+            self.world.add(rob)
 
     def start(self):
         self.running = True
@@ -126,7 +157,7 @@ class Scene(object):
 
     def _check_selection(self, event):
         for obj in self.world.children: # just nodes attached directly in world
-            if not isinstance(obj, physics.DynamicBody):
+            if not isinstance(obj, physics.Body):
                 continue
 
             square = obj.bounding_rectangle()
@@ -212,7 +243,7 @@ class Scene(object):
             ]
             self.draw_polygon(vertices, border=(64, 0, 255, 255))
 
-        if isinstance(node, physics.DynamicBody):
+        if isinstance(node, physics.Body):
             for shape in node.shapes:
                 self.draw_shape(shape)
 
