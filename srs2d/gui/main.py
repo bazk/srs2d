@@ -182,25 +182,25 @@ class ObjectAttributesTreeView():
     def on_selection_change(self, obj):
         self.store.clear()
 
-        if obj is not None:
-            for attr in obj.attributes:
-                # value = attr.getter()
+        # if obj is not None:
+        #     for attr in obj.attributes:
+        #         # value = attr.getter()
 
-                # if isinstance(value, tuple):
-                #     root = self.store.append(None, (attr.key, value, attr))
-                #     i = 0
-                #     for part in value:
-                #         self.store.append(root, (i, value, attr))
-                #         i += 1
+        #         # if isinstance(value, tuple):
+        #         #     root = self.store.append(None, (attr.key, value, attr))
+        #         #     i = 0
+        #         #     for part in value:
+        #         #         self.store.append(root, (i, value, attr))
+        #         #         i += 1
 
-                # elif isinstance(value, physics.Vector):
-                #     x, y = (value.x, value.y)
-                #     root = self.store.append(None, (attr.key, value, attr))
-                #     self.store.append(root, ('x', value, attr))
-                #     self.store.append(root, ('y', value, attr))
+        #         # elif isinstance(value, physics.Vector):
+        #         #     x, y = (value.x, value.y)
+        #         #     root = self.store.append(None, (attr.key, value, attr))
+        #         #     self.store.append(root, ('x', value, attr))
+        #         #     self.store.append(root, ('y', value, attr))
 
-                # else:
-                self.store.append(None, (attr.key, attr))
+        #         # else:
+        #         self.store.append(None, (attr.key, attr))
 
     def cell_data(self, column, cell, model, iter):
         key = model.get_value(iter, 0)

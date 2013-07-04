@@ -125,8 +125,8 @@ class Scene(object):
         self.dropdown.on_mouse_move(event)
 
     def _check_selection(self, event):
-        for obj in self.world.children:
-            if not isinstance(obj, physics.Object):
+        for obj in self.world.children: # just nodes attached directly in world
+            if not isinstance(obj, physics.DynamicBody):
                 continue
 
             square = obj.bounding_rectangle()

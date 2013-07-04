@@ -34,7 +34,109 @@ DEFAULT_MASK_BITS = 0xFFFF
 def dot(v1, v2):
     return v1[0] * v2[0] + v1[1] * v2[1]
 
-class World(object):
+class Node(object):
+    def __init__(self, id=None, category_bits=None, mask_bits=None):
+        self.id = id
+        self.children = []
+        self.parent = None
+        self.realized = False
+
+        self.category_bits = category_bits
+        self.mask_bits = mask_bits
+
+        self.registered_callbacks = {}
+
+    def signal(self, signal_name, *args, **kwargs):
+        if not signal_name in self.registered_callbacks:
+            return False
+
+        for cb in self.registered_callbacks[signal_name]:
+            cb(*args, **kwargs)
+
+    def connect(self, signal_name, callback_function):
+        if not signal_name in self.registered_callbacks:
+            self.registered_callbacks[signal_name] = [callback_function]
+        else:
+            self.registered_callbacks[signal_name].append(callback_function)
+
+    def add(self, child):
+        self.children.append(child)
+        child.added(self)
+        self.signal('add' , child)
+
+    def added(self, parent):
+        self.parent = parent
+        self.signal('added' , parent)
+
+    def realize(self, world):
+        global DEFAULT_CATEGORY_BITS, DEFAULT_MASK_BITS
+
+        if self.category_bits is None:
+            if isinstance(self.parent, Node):
+                self.category_bits = self.parent.category_bits
+            else:
+                self.category_bits = DEFAULT_CATEGORY_BITS
+
+        if self.mask_bits is None:
+            if isinstance(self.parent, Node):
+                self.mask_bits = self.parent.mask_bits
+            else:
+                self.mask_bits = DEFAULT_MASK_BITS
+
+        self.world = world
+        self.signal('realize', world)
+
+        for child in self.children:
+            child.realize(world)
+
+        self.realized = True
+
+    def prepare(self):
+        self.signal('prepare')
+
+        for child in self.children:
+            child.prepare()
+
+    def step(self):
+        self.signal('step')
+
+        for child in self.children:
+            child.step()
+
+    def think(self):
+        self.signal('think')
+
+        for child in self.children:
+            child.think()
+
+    def bounding_rectangle(self):
+        rect = None
+
+        for child in self.children:
+            child_rect = child.bounding_rectangle()
+
+            if child_rect is None:
+                continue
+
+            if rect is None:
+                rect = child_rect
+            else:
+                rect.union(child_rect)
+
+        return rect
+
+    def filter(self, cls):
+        ret = []
+
+        if isinstance(self, cls):
+            ret.append(self)
+
+        for child in self.children:
+            ret.extend(child.filter(cls))
+
+        return ret
+
+class World(Node):
     """
     Creates a 2D top-down physics World.
 
@@ -48,131 +150,81 @@ class World(object):
             # draw_the_screen(shapes)
     """
 
-    time_step = 1.0 / 30.0
-    velocity_iterations = 3
-    position_iterations = 1
-
-    current_id_seq = 0
-
     def __init__(self):
-        __log__.info("Initializing physics...")
-
-        self._lock = threading.Lock()
-
-        self._b2World = Box2D.b2World(gravity=(0, 0), doSleep=True)
-        self._b2World.destructionListener = _DestructionListener(self)
-        self._b2World.contactListener = _ContactListener(self)
-
+        super(World, self).__init__()
+        self.time_step = 1.0 / 30.0
+        self.velocity_iterations = 3
+        self.position_iterations = 1
         self.step_count = 0.0
         self.clock = 0.0
 
-        self.children = []
+        self._b2World = Box2D.b2World(gravity=(0, 0), doSleep=True)
+        self.category_bits = DEFAULT_CATEGORY_BITS
+        self.mask_bits = DEFAULT_MASK_BITS
+        self.realized = True
 
-        self.registered_callbacks = {}
-
-        __log__.info("Initialization complete.")
-
-    def reset(self):
-        """Reset counters and clock (does not reset the world itself)."""
-
-        self._lock.acquire()
-
-        try:
-            __log__.info("Reset.")
-            self.step_count = 0.0
-            self.clock = 0.0
-        finally:
-            self._lock.release()
+        self.connect('add', self.on_add)
 
     def to_b2World(self):
         return self._b2World
 
-    def add(self, child):
-        child.added(self)
-        child.realize(self)
-        self.children.append(child)
-
-    def signal(self, signal_name, parameter=None):
-        if not signal_name in self.registered_callbacks:
-            return False
-
-        for cb in self.registered_callbacks[signal_name]:
-            if parameter is None:
-                cb()
-            else:
-                cb(parameter)
-
-    def register(self, signal_name, callback_function):
-        if not signal_name in self.registered_callbacks:
-            self.registered_callbacks[signal_name] = [callback_function]
-        else:
-            self.registered_callbacks[signal_name].append(callback_function)
-
     def step(self):
         """Run a single physics step."""
-        self._lock.acquire()
 
-        try:
-            self._b2World.Step(self.time_step, self.velocity_iterations,
-                    self.position_iterations)
-            self._b2World.ClearForces()
+        for child in self.children:
+            child.prepare()
 
-            for node in self.children:
-                node.step()
+        self._b2World.Step(self.time_step, self.velocity_iterations,
+                self.position_iterations)
+        self._b2World.ClearForces()
 
-            self.step_count += 1
-            self.clock += self.time_step
+        for child in self.children:
+            child.step()
 
-        finally:
-            self._lock.release()
+        self.step_count += 1
+        self.clock += self.time_step
 
-    def on_pre_solve(self, contact, old_manifold):
-        """Called before a contact gets resolved."""
-        pass
+        for child in self.children:
+            child.think()
 
-    def on_begin_contact(self, contact):
-        """Called on the beginning of a contact."""
-        pass
+    def on_add(self, child):
+        child.realize(self)
 
-    def on_end_contact(self, contact):
-        """Called when ending a contact"""
-        pass
 
-    def on_post_solve(self, contact, impulse):
-        """Called after a contact is resolved."""
-        pass
+class Controller(Node):
+    def __init__(self):
+        super(Controller, self).__init__()
+        self._sensor_nodes = []
+        self._actuator_nodes = []
+        self.sensors = {}
+        self.actuators = {}
 
-    def on_destroy(self, obj):
-        """Called when an object is destroyed."""
-        pass
+        self.connect('added', self.on_added)
 
-class _DestructionListener(Box2D.b2DestructionListener):
-    """Wrapper for b2DestructionListener."""
-    def __init__(self, parent, **kwargs):
-        super(_DestructionListener, self).__init__(**kwargs)
-        self.parent = parent
+    def on_added(self, parent):
+        self._sensor_nodes = parent.filter(Sensor)
+        self._actuator_nodes = parent.filter(Actuator)
 
-    def SayGoodbye(self, obj):
-        self.parent.on_destroy(obj)
+    def update_sensors(self):
+        for sensor in self._sensor_nodes:
+            if sensor.id is None:
+                continue
 
-class _ContactListener(Box2D.b2ContactListener):
-    """Wrapper for b2ContactListener."""
-    def __init__(self, parent, **kwargs):
-        super(_ContactListener, self).__init__(**kwargs)
-        self.parent = parent
+            values = sensor.values
+            for i in range(len(values)):
+                self.sensors[sensor.id + str(i)] = values[i]
 
-    def PreSolve(self, contact, old_manifold):
-        self.parent.on_pre_solve(contact, old_manifold)
+    def update_actuators(self):
+        for actuator in self._actuator_nodes:
+            if actuator.id is None:
+                continue
 
-    def BeginContact(self, contact):
-        self.parent.on_begin_contact(contact)
+            values = actuator.values
+            new_values = [ 0.0 for i in range(len(values)) ]
+            for i in range(len(values)):
+                new_values[i] = self.actuators[actuator.id + str(i)]
 
-    def EndContact(self, contact):
-        self.parent.on_end_contact(contact)
-
-    def PostSolve(self, contact, impulse):
-        self.parent.on_post_solve(contact, impulse)
-
+            actuator.values = new_values
 
 class Vector(object):
     def __init__(self, x=None, y=None):
@@ -227,86 +279,6 @@ class BoundingRectangle(object):
             if other.high.x > self.high.x: self.high.x = other.high.x
             if other.high.y > self.high.y: self.high.y = other.high.y
 
-class Node(object):
-    def __init__(self, category_bits=None, mask_bits=None):
-        self.children = []
-        self.parent = None
-        self.realized = False
-
-        self.category_bits = category_bits
-        self.mask_bits = mask_bits
-
-    def add(self, child):
-        self.children.append(child)
-        child.added(self)
-
-    def added(self, parent):
-        self.parent = parent
-        self.on_added(parent)
-
-    def realize(self, world):
-        global DEFAULT_CATEGORY_BITS, DEFAULT_MASK_BITS
-
-        if self.category_bits is None:
-            if isinstance(self.parent, Node):
-                self.category_bits = self.parent.category_bits
-            else:
-                self.category_bits = DEFAULT_CATEGORY_BITS
-
-        if self.mask_bits is None:
-            if isinstance(self.parent, Node):
-                self.mask_bits = self.parent.mask_bits
-            else:
-                self.mask_bits = DEFAULT_MASK_BITS
-
-        self.world = world
-        self.on_realize(world)
-        self.realized = True
-
-        for child in self.children:
-            child.realize(world)
-
-    def step(self):
-        self.on_step()
-
-        for child in self.children:
-            child.step()
-
-    def on_added(self, parent):
-        pass
-
-    def on_realize(self, world):
-        pass
-
-    def on_step(self):
-        pass
-
-    def bounding_rectangle(self):
-        rect = None
-
-        for child in self.children:
-            child_rect = child.bounding_rectangle()
-
-            if child_rect is None:
-                continue
-
-            if rect is None:
-                rect = child_rect
-            else:
-                rect.union(child_rect)
-
-        return rect
-
-class Object(Node):
-    def __init__(self, **kwargs):
-        super(Object, self).__init__(**kwargs)
-
-        self.attributes = []
-
-    def add_attribute(self, obj, key, **kwargs):
-        attr_def = AttrDef(obj, key, **kwargs)
-        self.attributes.append(attr_def)
-
 class AttrDef(object):
     def __init__(self, obj, key, read_only=True):
         self.obj = obj
@@ -324,8 +296,12 @@ class DynamicBody(Node):
         self.position = position
         self.shapes = []
         self.joints = []
+        self.controller = None
         self._body = None
         self._world_center = Vector(0, 0)
+
+        self.connect('realize', self.on_realize)
+        self.connect('think', self.on_think)
 
     def add_shape(self, shape):
         self.shapes.append(shape)
@@ -335,9 +311,11 @@ class DynamicBody(Node):
         self.joints.append(joint)
         joint.added(self, anchor)
 
-    def on_realize(self, world):
-        super(DynamicBody, self).on_realize(world)
+    def set_controller(self, controller):
+        self.controller = controller
+        controller.added(self)
 
+    def on_realize(self, world):
         self._body = world.to_b2World().CreateDynamicBody(position=self.position.to_b2Vec2())
         self._body.userData = self
 
@@ -346,6 +324,10 @@ class DynamicBody(Node):
 
         for joint in self.joints:
             joint.realize(world)
+
+    def on_think(self):
+        if self.controller is not None:
+            self.controller.think()
 
     def to_b2Body(self):
         return self._body
@@ -434,6 +416,7 @@ class Sensor(Node):
     def __init__(self, **kwargs):
         super(Sensor, self).__init__(**kwargs)
 
+
 class RaycastSensor(Sensor):
     def raycast(self, callback, origin, dest):
         cb_instance = self._RaycastCallback(callback)
@@ -458,8 +441,9 @@ class PolygonShape(Shape):
         super(PolygonShape, self).__init__(**kwargs)
         self._vertices = vertices
 
+        self.connect('realize', self.on_realize)
+
     def on_realize(self, world):
-        super(PolygonShape, self).on_realize(world)
         self._fixture = self.parent.to_b2Body().CreatePolygonFixture(
             vertices=self._vertices, density=self.density,
             categoryBits=self.category_bits, maskBits=self.mask_bits)
@@ -494,8 +478,9 @@ class CircleShape(Shape):
         super(CircleShape, self).__init__(**kwargs)
         self.radius = radius
 
+        self.connect('realize', self.on_realize)
+
     def on_realize(self, world):
-        super(CircleShape, self).on_realize(world)
         self._fixture = self.parent.to_b2Body().CreateCircleFixture(
             radius=self.radius, density=self.density,
             categoryBits=self.category_bits, maskBits=self.mask_bits)
@@ -518,10 +503,7 @@ class CircleShape(Shape):
 class Joint(Node):
     def added(self, parent, anchor):
         self.parent = parent
-        self.on_added(parent, anchor)
-
-    def on_added(self, parent, anchor):
-        pass
+        self.signal('added', parent, anchor)
 
 class WeldJoint(Joint):
     def __init__(self, target=None, target_anchor=None, **kwargs):
@@ -533,12 +515,13 @@ class WeldJoint(Joint):
         self.body1 = target
         self.body1_anchor = target_anchor
 
+        self.connect('added', self.on_added)
+        self.connect('realize', self.on_realize)
+
     def on_added(self, parent, anchor):
-        super(WeldJoint, self).on_added(parent, anchor)
         self.body2 = parent
         self.body2_anchor = anchor
 
     def on_realize(self, world):
-        super(WeldJoint, self).on_realize(world)
         world.to_b2World().CreateWeldJoint(bodyA=self.body1.to_b2Body(), localAnchorA=self.body1_anchor.to_b2Vec2(),
                 bodyB=self.body2.to_b2Body(), localAnchorB=self.body2_anchor.to_b2Vec2())

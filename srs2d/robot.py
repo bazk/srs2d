@@ -26,86 +26,37 @@ import math
 import random
 import logging
 import physics
+import ann
 
 __log__ = logging.getLogger(__name__)
 
 D2R = math.pi / 180.0
 
-class Robot(physics.Object):
+class Robot(physics.DynamicBody):
     def __init__(self, position=physics.Vector(0.0, 0.0), **kwargs):
-        super(Robot, self).__init__(**kwargs)
-
-        self.id = id(self)
-
-        self._body = RobotBody(position=position)
-        self.add(self._body)
-
-        self.add_attribute(self, 'id')
-        self.add_attribute(self, 'power', read_only=False)
-        self.add_attribute(self, 'position')
-        self.add_attribute(self, 'front_led', read_only=False)
-        self.add_attribute(self, 'rear_led', read_only=False)
-        self.add_attribute(self, 'camera')
-        self.add_attribute(self, 'proximity')
-        self.add_attribute(self, 'ground')
-
-    def get_id(self):
-        return self.id
-
-    def get_power(self):
-        return (self._body.tires.power_left, self._body.tires.power_right)
-
-    def set_power(self, power):
-        self._body.tires.power_left = power[0]
-        self._body.tires.power_right = power[1]
-
-    def get_position(self):
-        return self._body.world_center
-
-    def get_front_led(self):
-        return self._body.front_led.on
-
-    def set_front_led(self, value):
-        self._body.front_led.on = value
-
-    def get_rear_led(self):
-        return self._body.rear_led.on
-
-    def set_rear_led(self, value):
-        self._body.rear_led.on = value
-
-    def get_camera(self):
-        return self._body.camera.values
-
-    def get_proximity(self):
-        return self._body.proximity.values
-
-    def get_ground(self):
-        return self._body.ground_color.value
-
-class RobotBody(physics.DynamicBody):
-    def __init__(self, position=physics.Vector(0.0, 0.0), **kwargs):
-        super(RobotBody, self).__init__(position, **kwargs)
+        super(Robot, self).__init__(position, **kwargs)
 
         self.add_shape(physics.CircleShape(radius=0.06, density=27))
 
-        self.tires = DifferentialWheelsActuator(position=position, distance=0.0825, wheel_size=(0.017, 0.03), mask_bits=0x0000)
-        self.add(self.tires)
+        self.wheels = DifferentialWheelsActuator(id='wheels', position=position, distance=0.0825, wheel_size=(0.017, 0.03), mask_bits=0x0000)
+        self.add(self.wheels)
 
-        self.front_led = LED(position=physics.Vector(0.0, 0.06), color=(255,0,0), category_bits=0x0000, mask_bits=0x0000)
+        self.front_led = LED(id='front_led', position=physics.Vector(0.0, 0.06), color=(0,0,255), category_bits=0x0000, mask_bits=0x0000)
         self.add(self.front_led)
 
-        self.rear_led = LED(position=physics.Vector(0.0, -0.06), color=(0,0,255), category_bits=0x0000, mask_bits=0x0000)
+        self.rear_led = LED(id='rear_led', position=physics.Vector(0.0, -0.06), color=(255,0,0), category_bits=0x0000, mask_bits=0x0000)
         self.add(self.rear_led)
 
-        self.camera = DualRegionCamera(origin=physics.Vector(0.0, 0.06), look_at=physics.Vector(0.0, 1.0))
+        self.camera = DualRegionCamera(id='camera', origin=physics.Vector(0.0, 0.06), look_at=physics.Vector(0.0, 1.0))
         self.add(self.camera)
 
-        self.proximity = CircularProximitySensor(center=physics.Vector(0.0, 0.0), inner_radius=0.06, outer_radius=0.085, infrared_count=8)
+        self.proximity = CircularProximitySensor(id='proximity', center=physics.Vector(0.0, 0.0), inner_radius=0.06, outer_radius=0.085, infrared_count=8)
         self.add(self.proximity)
 
-        self.ground_color = BinaryGroundColorSensor()
-        self.add(self.ground_color)
+        self.ground = BinaryGroundColorSensor(id='ground')
+        self.add(self.ground)
+
+        self.set_controller(ann.NeuralNetworkController())
 
 class DifferentialWheelsActuator(physics.Actuator):
     MAX_SPEED = 0.4
@@ -136,9 +87,10 @@ class DifferentialWheelsActuator(physics.Actuator):
         self._power_left = 0.0
         self._power_right = 0.0
 
-    def on_added(self, parent):
-        super(DifferentialWheelsActuator, self).on_added(parent)
+        self.connect('added', self.on_added)
+        self.connect('step', self.on_step)
 
+    def on_added(self, parent):
         joint_left = physics.WeldJoint(target=parent, target_anchor=physics.Vector(-(self.distance/2.0), 0))
         self.wheel_left.add_joint(joint_left, anchor=physics.Vector(0.0, 0.0))
 
@@ -146,10 +98,8 @@ class DifferentialWheelsActuator(physics.Actuator):
         self.wheel_right.add_joint(joint_right, anchor=physics.Vector(0.0, 0.0))
 
     def on_step(self):
-        super(DifferentialWheelsActuator, self).on_step()
-
-        self._step_wheel(self.wheel_left, self.power_left * self.MAX_SPEED)
-        self._step_wheel(self.wheel_right, self.power_right * self.MAX_SPEED)
+        self._step_wheel(self.wheel_left, self._power_left * self.MAX_SPEED)
+        self._step_wheel(self.wheel_right, self._power_right * self.MAX_SPEED)
 
     def _step_wheel(self, wheel, desired_speed):
         """Calculate and apply forces on a tire."""
@@ -174,30 +124,21 @@ class DifferentialWheelsActuator(physics.Actuator):
         wheel.linear_velocity = (forward_velocity * self.DRAG) + (lateral_velocity * self.DRIFT)
 
     @property
-    def power_left(self):
-        return self._power_left
+    def values(self):
+        return [self._power_left, self._power_right]
 
-    @power_left.setter
-    def power_left(self, value):
-        if value > 1.0:
-            self._power_left = 1.0
-        elif value < -1.0:
-            self._power_left = -1.0
-        else:
-            self._power_left = value
+    @values.setter
+    def values(self, values):
+        def check_bounds(val):
+            if val > 1.0:
+                return 1.0
+            elif val < -1.0:
+                return -1.0
+            else:
+                return val
 
-    @property
-    def power_right(self):
-        return self._power_right
-
-    @power_right.setter
-    def power_right(self, value):
-        if value > 1.0:
-            self._power_right = 1.0
-        elif value < -1.0:
-            self._power_right = -1.0
-        else:
-            self._power_right = value
+        self._power_left = check_bounds(values[0])
+        self._power_right = check_bounds(values[1])
 
 class LED(physics.Actuator):
     def __init__(self, position=physics.Vector(0.0, 0.0), color=(255, 0, 0), **kwargs):
@@ -213,18 +154,19 @@ class LED(physics.Actuator):
         self._shape = physics.CircleShape(radius=0.03, density=1, color=(0,0,0))
         self._body.add_shape(self._shape)
 
+        self.connect('added', self.on_added)
+
     def on_added(self, parent):
-        super(LED, self).on_added(parent)
         joint = physics.WeldJoint(target=parent, target_anchor=self._rel_position)
         self._body.add_joint(joint, anchor=physics.Vector(0.0, 0.0))
 
     @property
-    def on(self):
-        return self._on
+    def values(self):
+        return [1.0] if self._on else [0.0]
 
-    @on.setter
-    def on(self, value):
-        self._on = value
+    @values.setter
+    def values(self, values):
+        self._on = True if values[0] >= 0.5 else False
 
         if self._on:
             self._shape.color = self.color
@@ -256,15 +198,12 @@ class DualRegionCamera(physics.RaycastSensor):
             vertex = physics.Vector(distance * math.sin(angle), distance * math.cos(angle))
             self.vertices.append(vertex)
 
-        self.values = { i: 0.0 for i in range(4) }
+        self.connect('step', self.on_step)
+
+        self.values = [ 0.0 for i in range(4) ]
 
     def on_step(self):
-        super(DualRegionCamera, self).on_step()
-
-        self.values[0] = 0.0 # red, region 0
-        self.values[1] = 0.0 # blue, region 0
-        self.values[2] = 0.0 # red, region 1
-        self.values[3] = 0.0 # blue, region 1
+        new_values = [ 0.0 for i in range(4) ]
         counter = 0
 
         for vertex in self.vertices:
@@ -278,11 +217,19 @@ class DualRegionCamera(physics.RaycastSensor):
             if self.raycast_hit:
                 region = 0 if counter < math.floor(len(self.vertices) / 2.0) else 2
                 if self.raycast_led.color == (255, 0, 0):
-                    self.values[region+0] = 1.0
+                    new_values[region+0] = 1.0
                 else:
-                    self.values[region+1] = 1.0
+                    new_values[region+1] = 1.0
 
             counter += 1
+
+        def update_value(key, new_value):
+            if self.values[key] != new_value:
+                self.values[key] = new_value
+                self.signal('update-value', key, new_value)
+
+        for i in range(4):
+            update_value(i, new_values[0])
 
     def raycast_callback(self, shape, point, normal, fraction):
         if shape.parent is None:
@@ -292,7 +239,7 @@ class DualRegionCamera(physics.RaycastSensor):
         if isinstance(body, physics.DynamicBody):
             if body.parent is not None:
                 if isinstance(body.parent, LED):
-                    if body.parent.on:
+                    if body.parent._on:
                         self.raycast_hit = True
                         self.raycast_fraction = fraction
                         self.raycast_led = body.parent
@@ -308,15 +255,15 @@ class CircularProximitySensor(physics.RaycastSensor):
         self.outer_radius = outer_radius
         self.infrared_count = infrared_count
 
-        self.values = { i: 0.0 for i in range(infrared_count) }
+        self.values = [ 0.0 for i in range(infrared_count) ]
+
+        self.connect('step', self.on_step)
 
     def on_step(self):
-        super(CircularProximitySensor, self).on_step()
-
+        new_values = [ 0.0 for i in range(self.infrared_count) ]
         angle_between = 2 * math.pi / float(self.infrared_count)
 
         for i in range(self.infrared_count):
-            self.values[i] = 0.0
             self.raycast_hit = False
             self.raycast_fraction = 1.0
 
@@ -329,7 +276,15 @@ class CircularProximitySensor(physics.RaycastSensor):
                 self.parent.transform * outer.to_b2Vec2())
 
             if self.raycast_hit:
-                self.values[i] = self.raycast_fraction
+                new_values[i] = self.raycast_fraction
+
+        def update_value(key, new_value):
+            if self.values[key] != new_value:
+                self.values[key] = new_value
+                self.signal('update-value', key, new_value)
+
+        for i in range(self.infrared_count):
+            update_value(i, new_values[i])
 
     def raycast_callback(self, shape, point, normal, fraction):
         if ((self.category_bits & shape.mask_bits) != 0) and ((shape.category_bits & self.mask_bits) != 0):
@@ -346,28 +301,33 @@ class ColorPadActuator(physics.Actuator):
         self.center = center
         self.radius = radius
 
+        self.connect('step', self.on_step)
+
     def on_step(self):
-        super(ColorPadActuator, self).on_step()
-        self.world.signal('color-pad-notify-event', self)
+        self.world.signal('color-pad-notify', self)
 
 class BinaryGroundColorSensor(physics.Sensor):
     def __init__(self, **kwargs):
         super(BinaryGroundColorSensor, self).__init__(**kwargs)
-        self.partial = 0.0
-        self.value = 0.0
 
-    def on_step(self):
-        super(BinaryGroundColorSensor, self).on_step()
-        self.value = self.partial
-        self.partial = 0.0
+        self.values = [ 0.0 ]
+
+        self.connect('realize', self.on_realize)
+        self.connect('prepare', self.on_prepare)
 
     def on_realize(self, world):
-        super(BinaryGroundColorSensor, self).on_realize(world)
-        world.register('color-pad-notify-event', self.on_color_pad_notify)
+        world.connect('color-pad-notify', self.on_color_pad_notify)
+
+    def on_prepare(self):
+        if self.values[0] != 0.0:
+            self.values[0] = 0.0
+            self.signal('update-value', 0, 0.0)
 
     def on_color_pad_notify(self, pad):
         x = self.parent.world_center.x
         y = self.parent.world_center.y
 
         if ((pad.center.x - x) ** 2 + (pad.center.y - y) ** 2) < (pad.radius ** 2):
-            self.partial = 1.0
+            if self.values[0] != 1.0:
+                self.values[0] = 1.0
+                self.signal('update-value', 0, 1.0)
