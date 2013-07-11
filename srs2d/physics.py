@@ -163,7 +163,7 @@ class World(Node):
         self.mask_bits = DEFAULT_MASK_BITS
         self.realized = True
 
-        self.connect('add', self.on_add)
+        self.connect('add', self._on_add)
 
     def to_b2World(self):
         return self._b2World
@@ -171,6 +171,7 @@ class World(Node):
     def step(self):
         """Run a single physics step."""
 
+        self.signal('prepare')
         for child in self.children:
             child.prepare()
 
@@ -178,16 +179,18 @@ class World(Node):
                 self.position_iterations)
         self._b2World.ClearForces()
 
+        self.signal('step')
         for child in self.children:
             child.step()
 
         self.step_count += 1
         self.clock += self.time_step
 
+        self.signal('think')
         for child in self.children:
             child.think()
 
-    def on_add(self, child):
+    def _on_add(self, child):
         child.realize(self)
 
 
@@ -199,9 +202,9 @@ class Controller(Node):
         self.sensors = {}
         self.actuators = {}
 
-        self.connect('added', self.on_added)
+        self.connect('added', self._on_added)
 
-    def on_added(self, parent):
+    def _on_added(self, parent):
         self._sensor_nodes = parent.filter(Sensor)
         self._actuator_nodes = parent.filter(Actuator)
 
@@ -368,14 +371,14 @@ class DynamicBody(Body):
         super(DynamicBody, self).__init__(**kwargs)
         self.controller = None
 
-        self.connect('realize', self.on_realize)
-        self.connect('think', self.on_think)
+        self.connect('realize', self._on_realize)
+        self.connect('think', self._on_think)
 
     def set_controller(self, controller):
         self.controller = controller
         controller.added(self)
 
-    def on_realize(self, world):
+    def _on_realize(self, world):
         self._body = world.to_b2World().CreateDynamicBody(position=self.position.to_b2Vec2())
         self._body.userData = self
 
@@ -385,7 +388,7 @@ class DynamicBody(Body):
         for joint in self.joints:
             joint.realize(world)
 
-    def on_think(self):
+    def _on_think(self):
         if self.controller is not None:
             self.controller.think()
 
@@ -414,9 +417,9 @@ class DynamicBody(Body):
 class StaticBody(Body):
     def __init__(self, **kwargs):
         super(StaticBody, self).__init__(**kwargs)
-        self.connect('realize', self.on_realize)
+        self.connect('realize', self._on_realize)
 
-    def on_realize(self, world):
+    def _on_realize(self, world):
         self._body = world.to_b2World().CreateStaticBody(position=self.position.to_b2Vec2())
         self._body.userData = self
 
@@ -461,9 +464,9 @@ class PolygonShape(Shape):
         super(PolygonShape, self).__init__(**kwargs)
         self._vertices = vertices
 
-        self.connect('realize', self.on_realize)
+        self.connect('realize', self._on_realize)
 
-    def on_realize(self, world):
+    def _on_realize(self, world):
         self._fixture = self.parent.to_b2Body().CreatePolygonFixture(
             vertices=self._vertices, density=self.density,
             categoryBits=self.category_bits, maskBits=self.mask_bits)
@@ -498,9 +501,9 @@ class CircleShape(Shape):
         super(CircleShape, self).__init__(**kwargs)
         self.radius = radius
 
-        self.connect('realize', self.on_realize)
+        self.connect('realize', self._on_realize)
 
-    def on_realize(self, world):
+    def _on_realize(self, world):
         self._fixture = self.parent.to_b2Body().CreateCircleFixture(
             radius=self.radius, density=self.density,
             categoryBits=self.category_bits, maskBits=self.mask_bits)
@@ -535,13 +538,13 @@ class WeldJoint(Joint):
         self.body1 = target
         self.body1_anchor = target_anchor
 
-        self.connect('added', self.on_added)
-        self.connect('realize', self.on_realize)
+        self.connect('added', self._on_added)
+        self.connect('realize', self._on_realize)
 
-    def on_added(self, parent, anchor):
+    def _on_added(self, parent, anchor):
         self.body2 = parent
         self.body2_anchor = anchor
 
-    def on_realize(self, world):
+    def _on_realize(self, world):
         world.to_b2World().CreateWeldJoint(bodyA=self.body1.to_b2Body(), localAnchorA=self.body1_anchor.to_b2Vec2(),
                 bodyB=self.body2.to_b2Body(), localAnchorB=self.body2_anchor.to_b2Vec2())
