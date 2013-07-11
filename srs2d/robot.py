@@ -87,6 +87,8 @@ class DifferentialWheelsActuator(physics.Actuator):
         self._power_left = 0.0
         self._power_right = 0.0
 
+        self.counter = 0
+
         self.connect('added', self.on_added)
         self.connect('step', self.on_step)
 
@@ -98,6 +100,12 @@ class DifferentialWheelsActuator(physics.Actuator):
         self.wheel_right.add_joint(joint_right, anchor=physics.Vector(0.0, 0.0))
 
     def on_step(self):
+        if self.counter == 0:
+            self.counter = 1
+        else:
+            self.counter  = 0
+            return
+
         self._step_wheel(self.wheel_left, self._power_left * self.MAX_SPEED)
         self._step_wheel(self.wheel_right, self._power_right * self.MAX_SPEED)
 
@@ -202,7 +210,15 @@ class DualRegionCamera(physics.RaycastSensor):
 
         self.values = [ 0.0 for i in range(4) ]
 
+        self.counter = 0
+
     def on_step(self):
+        if self.counter == 0:
+            self.counter = 1
+        else:
+            self.counter  = 0
+            return
+
         new_values = [ 0.0 for i in range(4) ]
         counter = 0
 
@@ -259,7 +275,15 @@ class CircularProximitySensor(physics.RaycastSensor):
 
         self.connect('step', self.on_step)
 
+        self.counter = 0
+
     def on_step(self):
+        if self.counter == 0:
+            self.counter = 1
+        else:
+            self.counter  = 0
+            return
+
         new_values = [ 0.0 for i in range(self.infrared_count) ]
         angle_between = 2 * math.pi / float(self.infrared_count)
 
@@ -303,7 +327,15 @@ class ColorPadActuator(physics.Actuator):
 
         self.connect('step', self.on_step)
 
+        self.counter = 0
+
     def on_step(self):
+        if self.counter == 0:
+            self.counter = 1
+        else:
+            self.counter  = 0
+            return
+
         self.world.signal('color-pad-notify', self)
 
 class BinaryGroundColorSensor(physics.Sensor):

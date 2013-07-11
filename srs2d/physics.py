@@ -152,7 +152,7 @@ class World(Node):
 
     def __init__(self):
         super(World, self).__init__()
-        self.time_step = 1.0 / 30.0
+        self.time_step = 1.0 / 15.0
         self.velocity_iterations = 3
         self.position_iterations = 1
         self.step_count = 0.0
