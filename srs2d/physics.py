@@ -467,8 +467,9 @@ class PolygonShape(Shape):
         self.connect('realize', self._on_realize)
 
     def _on_realize(self, world):
+        vert = [ v.to_b2Vec2() for v in self._vertices ]
         self._fixture = self.parent.to_b2Body().CreatePolygonFixture(
-            vertices=self._vertices, density=self.density,
+            vertices=vert, density=self.density,
             categoryBits=self.category_bits, maskBits=self.mask_bits)
         self._fixture.userData = self
 
@@ -477,7 +478,7 @@ class PolygonShape(Shape):
         transformed = []
 
         for vertex in self._vertices:
-            transformed.append(self.parent.transform * vertex)
+            transformed.append(self.parent.transform * vertex.to_b2Vec2())
 
         return transformed
 

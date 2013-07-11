@@ -72,8 +72,8 @@ class DifferentialWheelsActuator(physics.Actuator):
 
         x, y = wheel_size
         hx, hy = (x/2.0, y/2.0)
-        wheel_vertices = [ (-hx, hy), (hx, hy),
-                           (hx, -hy), (-hx, -hy) ]
+        wheel_vertices = [ physics.Vector(-hx, hy), physics.Vector(hx, hy),
+                           physics.Vector(hx, -hy), physics.Vector(-hx, -hy) ]
 
         self.wheel_left = physics.DynamicBody(position=physics.Vector(position.x-(distance/2.0), position.y))
         self.wheel_right = physics.DynamicBody(position=physics.Vector(position.x+(distance/2.0), position.y))
