@@ -83,11 +83,15 @@ class Simulation(object):
         self.world.add(robot.ColorPadActuator(center=physics.Vector(x, -x), radius=0.27))
         self.full_charge = targets_distance - 2 * 0.27
 
-        VERTICAL_WALL_VERTICES = [ (-0.01, H/2.0), (0.01, H/2.0),
-                                   (0.01, -H/2.0), (-0.01, -H/2.0) ]
+        VERTICAL_WALL_VERTICES = [ physics.Vector(-0.01, H/2.0),
+                                   physics.Vector(0.01, H/2.0),
+                                   physics.Vector(0.01, -H/2.0),
+                                   physics.Vector(-0.01, -H/2.0) ]
 
-        HORIZONTAL_WALL_VERTICES = [ (-W/2.0-0.01, 0.01), (W/2.0+0.01, 0.01),
-                                     (W/2.0+0.01, -0.01), (-W/2.0-0.01, -0.01) ]
+        HORIZONTAL_WALL_VERTICES = [ physics.Vector(-W/2.0-0.01, 0.01),
+                                     physics.Vector(W/2.0+0.01, 0.01),
+                                     physics.Vector(W/2.0+0.01, -0.01),
+                                     physics.Vector(-W/2.0-0.01, -0.01) ]
 
         wall = physics.StaticBody(position=physics.Vector(-W/2.0, 0))
         wall.add_shape(physics.PolygonShape(vertices=VERTICAL_WALL_VERTICES))
