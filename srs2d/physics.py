@@ -240,6 +240,9 @@ class World(object):
         """Run a single physics step."""
 
         for robot in self.robots:
+            pass # actuator phase
+
+        for robot in self.robots:
             w0, w1 = robot.wheels_angular_speed
             r = robot.wheels_radius
             l0, l1 = (w0*r, w1*r)
@@ -258,13 +261,35 @@ class World(object):
             robot.transform.rot.cos = math.cos(angle)
 
         for i in range(len(self.robots)):
-            for j in range(i+1, len(self.robots)):
+            for j in range(len(self.robots)):
                 r1, r2 = self.robots[i], self.robots[j]
 
                 dist = (r1.transform.pos[0] - r2.transform.pos[0]) ** 2 + (r1.transform.pos[1] - r2.transform.pos[1]) ** 2
 
-                if dist < ((r1.body_radius + r2.body_radius) ** 2):
-                    print 'collision'
+                if j > i:
+                    if dist < ((r1.body_radius + r2.body_radius) ** 2):
+                        if random.randint(0,1) == 0:
+                            r1.collision_count += 1
+                            r1.transform.pos = (random.uniform(-2,2),random.uniform(-2,2))
+                        else:
+                            r2.collision_count += 1
+                            r2.transform.pos = (random.uniform(-2,2),random.uniform(-2,2))
+
+                if dist < ((r1.body_radius + ir_radius + r2.body_radius) ** 2):
+                    pass # ir
+
+                if dist < ((r1.body_radius + camera_radius + r2.body_radius) ** 2):
+                    pass # camera
+
+            for a in range(len(self.target_areas)):
+                r = self.robots[i]
+                x,y = self.target_areas[a].center
+                radius = self.target_areas[a].radius
+
+                dist = (r.transform.pos[0] - x) ** 2 + (r.transform.pos[1] - y) ** 2
+
+                if dist < (radius ** 2):
+                    pass # in target area
 
         self.step_count += 1
         self.clock += time_step
