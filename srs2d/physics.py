@@ -15,128 +15,128 @@
 # You should have received a copy of the GNU General Public License
 # along with srs2d. If not, see <http://www.gnu.org/licenses/>.
 
-"""
-This module provides a simple physics wrapper for PyBox2D.
-"""
-
 __author__ = "Eduardo L. Buratti <eburatti09@gmail.com>"
-__date__ = "19 Jun 2013"
+__date__ = "13 Jul 2013"
 
-import threading
 import logging
-import Box2D
+import math
+import numpy as np
+import pyopencl as cl
+import pyopencl.array as clarray
+from pyopencl.tools import get_or_register_dtype, match_dtype_to_c_struct
 
 __log__ = logging.getLogger(__name__)
 
 DEFAULT_CATEGORY_BITS = 0x0001
 DEFAULT_MASK_BITS = 0xFFFF
 
-def dot(v1, v2):
-    return v1[0] * v2[0] + v1[1] * v2[1]
+# class Vector(object):
+#     DTYPE = np.dtype([ ("x", np.float32),
+#                        ("y", np.float32) ])
 
-class Node(object):
-    def __init__(self, id=None, category_bits=None, mask_bits=None):
-        self.id = id
-        self.children = []
-        self.parent = None
-        self.realized = False
+#     def __init__(self, x=None, y=None):
+#         if x is None:
+#             raise ValueError("first positional argument can not be 'None'")
 
-        self.category_bits = category_bits
-        self.mask_bits = mask_bits
+#         if isinstance(x, tuple):
+#             self.x, self.y = x
+#         else:
+#             if y is None:
+#                 raise ValueError("parameter 'y' can not be 'None'")
 
-        self.registered_callbacks = {}
+#             self.x = x
+#             self.y = y
 
-    def signal(self, signal_name, *args, **kwargs):
-        if not signal_name in self.registered_callbacks:
-            return False
+#     def __str__(self):
+#         return "Vector(%.2f, %.2f)" % (self.x, self.y)
 
-        for cb in self.registered_callbacks[signal_name]:
-            cb(*args, **kwargs)
+#     def dot(self, other):
+#         if isinstance(other, Vector):
+#             return self.x * other.x + self.y * other.y
 
-    def connect(self, signal_name, callback_function):
-        if not signal_name in self.registered_callbacks:
-            self.registered_callbacks[signal_name] = [callback_function]
+#         raise NotImplemented
+
+#     def __mul__(self, other):
+#         if isinstance(other, int) or isinstance(other, long) or isinstance(other, float):
+#             return Vector(other * self.x, other * self.y)
+
+#         raise NotImplemented
+
+#     def __rmul__(self, other):
+#         return self.__mul__(other)
+
+#     def __add__(self, other):
+#         if isinstance(other, Vector):
+#             return Vector(self.x + other.x, self.y + other.y)
+
+#         raise NotImplemented
+
+class Rotation(object):
+    def __init__(self, angle=None, sin=None, cos=None):
+        if sin is not None and cos is not None:
+            self.sin = sin
+            self.cos = cos
+        elif angle is not None:
+            self.sin = math.sin(angle)
+            self.cos = math.cos(angle)
         else:
-            self.registered_callbacks[signal_name].append(callback_function)
+            raise NotImplementedError
 
-    def add(self, child):
-        self.children.append(child)
-        child.added(self)
-        self.signal('add' , child)
+    def __str__(self):
+        return "Rotation(sin=%.2f, cos=%.2f)" % (self.sin, self.cos)
 
-    def added(self, parent):
-        self.parent = parent
-        self.signal('added' , parent)
+    @property
+    def angle(self):
+        return math.atan2(self.sin, self.cos)
 
-    def realize(self, world):
-        global DEFAULT_CATEGORY_BITS, DEFAULT_MASK_BITS
+    # @property
+    # def xaxis(self):
+    #     return Vector(self.cos, self.sin)
 
-        if self.category_bits is None:
-            if isinstance(self.parent, Node):
-                self.category_bits = self.parent.category_bits
-            else:
-                self.category_bits = DEFAULT_CATEGORY_BITS
+    # @property
+    # def yaxis(self):
+    #     return Vector(self.sin, self.cos)
 
-        if self.mask_bits is None:
-            if isinstance(self.parent, Node):
-                self.mask_bits = self.parent.mask_bits
-            else:
-                self.mask_bits = DEFAULT_MASK_BITS
+    # def __mul__(self, other):
+    #     if isinstance(other, Rotation):
+    #         sin = self.sin * other.cos + self.cos * other.sin
+    #         cos = self.cos * other.cos - self.sin * other.sin
+    #         return Rotation(sin, cos)
 
-        self.world = world
-        self.signal('realize', world)
+    #     if isinstance(other, Vector):
+    #         return Vector(self.cos * other.x - self.sin * other.y,
+    #                       self.sin * other.x + self.cos * other.y)
 
-        for child in self.children:
-            child.realize(world)
+    #     raise NotImplemented
 
-        self.realized = True
+    # def __rmul__(self, other):
+    #     return self.__mul__(other)
 
-    def prepare(self):
-        self.signal('prepare')
+class Transform(object):
+    def __init__(self, position, rotation):
+        self.pos = position
+        self.rot = rotation
 
-        for child in self.children:
-            child.prepare()
+    def __str__(self):
+        return "Transform(pos=%s, rot=%s)" % (str(self.pos), str(self.rot))
 
-    def step(self):
-        self.signal('step')
+    # def __mul__(self, other):
+    #     if isinstance(other, Transform):
+    #         rot = self.rot * other.rot
+    #         pos = (self.rot * other.pos) + self.pos
+    #         return Transform(pos, rot)
 
-        for child in self.children:
-            child.step()
+    #     if isinstance(other, Vector):
+    #         x = (self.rot.cos * other.x - self.rot.sin * other.y) + self.pos.x
+    #         y = (self.rot.sin * other.x + self.rot.cos * other.y) + self.pos.y
+    #         return Vector(x, y)
 
-    def think(self):
-        self.signal('think')
+    #     raise NotImplemented
 
-        for child in self.children:
-            child.think()
+    # def __rmul__(self, other):
+    #     return self.__mul__(other)
 
-    def bounding_rectangle(self):
-        rect = None
-
-        for child in self.children:
-            child_rect = child.bounding_rectangle()
-
-            if child_rect is None:
-                continue
-
-            if rect is None:
-                rect = child_rect
-            else:
-                rect.union(child_rect)
-
-        return rect
-
-    def filter(self, cls):
-        ret = []
-
-        if isinstance(self, cls):
-            ret.append(self)
-
-        for child in self.children:
-            ret.extend(child.filter(cls))
-
-        return ret
-
-class World(Node):
+class World(object):
     """
     Creates a 2D top-down physics World.
 
@@ -150,402 +150,144 @@ class World(Node):
             # draw_the_screen(shapes)
     """
 
+
     def __init__(self):
         super(World, self).__init__()
         self.time_step = 1.0 / 15.0
-        self.velocity_iterations = 3
-        self.position_iterations = 1
         self.step_count = 0.0
         self.clock = 0.0
 
-        self._b2World = Box2D.b2World(gravity=(0, 0), doSleep=True)
-        self.category_bits = DEFAULT_CATEGORY_BITS
-        self.mask_bits = DEFAULT_MASK_BITS
-        self.realized = True
+        self.robots = []
 
-        self.connect('add', self._on_add)
+        # self.context = context
+        # self.queue = queue
 
-    def to_b2World(self):
-        return self._b2World
+        # src = open('something.cl', 'r')
+        # self.prg = cl.Program(context, src.read()).build()
 
-    def step(self):
+        # sizeof_buf = cl.Buffer(context, 0, 4)
+        # self.prg.size_of_body_t(queue, (1,), None, sizeof_buf)
+
+        # sizeof = np.zeros(1, dtype=np.int32)
+        # cl.enqueue_copy(queue, sizeof, sizeof_buf)
+
+        # self.sizeof_body = int(sizeof[0])
+
+        # self.body_buf = None
+
+    # def push_to_device(self):
+    #     nbodies = len(self.bodies)
+
+    #     self.body_buf = cl.Buffer(self.context, 0, nbodies * self.sizeof_body)
+
+    #     pos_arr = np.empty(nbodies, dtype=np.dtype( (np.float32, (2,)) ))
+    #     rot_arr = np.empty(nbodies, dtype=np.dtype( (np.float32, (2,)) ))
+    #     lin_vel_arr = np.empty(nbodies, dtype=np.dtype( (np.float32, (2,)) ))
+    #     ang_vel_arr = np.empty(nbodies, dtype=np.float32)
+
+    #     for i in range(nbodies):
+    #         pos_arr[i][0], pos_arr[i][1] = self.bodies[i].transform.pos
+    #         rot_arr[i][0] = self.bodies[i].transform.rot.sin
+    #         rot_arr[i][1] = self.bodies[i].transform.rot.cos
+    #         lin_vel_arr[i][0], lin_vel_arr[i][1] = self.bodies[i].linear_velocity
+    #         ang_vel_arr[i] = self.bodies[i].angular_speed
+
+    #     pos_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=pos_arr)
+    #     rot_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=rot_arr)
+    #     lin_vel_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=lin_vel_arr)
+    #     ang_vel_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=ang_vel_arr)
+
+    #     self.prg.set_bodies(self.queue, (nbodies,), None, self.body_buf, pos_buf, rot_buf, lin_vel_buf, ang_vel_buf)
+
+    # def pull_from_device(self):
+    #     nbodies = len(self.bodies)
+
+    #     self.body_buf = cl.Buffer(self.context, 0, nbodies * self.sizeof_body)
+
+    #     pos_buf = cl.Buffer(self.context, 0, nbodies * 8)
+    #     rot_buf = cl.Buffer(self.context, 0, nbodies * 8)
+    #     lin_vel_buf = cl.Buffer(self.context, 0, nbodies * 8)
+    #     ang_vel_buf = cl.Buffer(self.context, 0, nbodies * 4)
+
+    #     self.prg.get_bodies(self.queue, (nbodies,), None, self.body_buf, pos_buf, rot_buf, lin_vel_buf, ang_vel_buf)
+
+    #     pos_arr = np.empty(nbodies, dtype=np.dtype( (np.float32, (2,)) ))
+    #     rot_arr = np.empty(nbodies, dtype=np.dtype( (np.float32, (2,)) ))
+    #     lin_vel_arr = np.empty(nbodies, dtype=np.dtype( (np.float32, (2,)) ))
+    #     ang_vel_arr = np.empty(nbodies, dtype=np.float32)
+
+    #     cl.enqueue_copy(self.queue, pos_arr, pos_buf)
+    #     cl.enqueue_copy(self.queue, rot_arr, rot_buf)
+    #     cl.enqueue_copy(self.queue, lin_vel_arr, lin_vel_buf)
+    #     cl.enqueue_copy(self.queue, ang_vel_arr, ang_vel_buf)
+
+    #     for i in range(nbodies):
+    #         self.bodies[i].transform.pos = (pos_arr[i][0], pos_arr[i][1])
+    #         self.bodies[i].transform.rot = Rotation(sin=rot_arr[i][0], cos=rot_arr[i][1])
+    #         self.bodies[i].linear_velocity = (lin_vel_arr[i][0], lin_vel_arr[i][1])
+    #         self.bodies[i].angular_speed = ang_vel_arr[i]
+
+    # def step_dynamics(self):
+    #     self.prg.step_dynamics(self.queue, (len(self.bodies),), None, self.body_buf)
+    #     self.step_count += 1
+
+    def create_robot(self, position=(0,0), angle=0):
+        robot = Robot(position, angle)
+        self.robots.append(robot)
+        return robot
+
+    def step(self, time_step):
         """Run a single physics step."""
 
-        self.signal('prepare')
-        for child in self.children:
-            child.prepare()
+        for robot in self.robots:
+            w0, w1 = robot.wheels_angular_speed
+            r = robot.wheels_radius
+            l0, l1 = (w0*r, w1*r)
 
-        self._b2World.Step(self.time_step, self.velocity_iterations,
-                self.position_iterations)
-        self._b2World.ClearForces()
+            robot.linear_velocity = ( robot.transform.rot.sin * (l0 + l1),
+                                      robot.transform.rot.cos * (l0 + l1) )
 
-        self.signal('step')
-        for child in self.children:
-            child.step()
+            robot.angular_speed = (l0 - l1) / (robot.wheels_distance / 2.0)
+
+            robot.transform.pos = ( robot.transform.pos[0] + robot.linear_velocity[0] * time_step,
+                                    robot.transform.pos[1] + robot.linear_velocity[1] * time_step )
+
+            angle = math.atan2(robot.transform.rot.sin, robot.transform.rot.cos)
+            angle += robot.angular_speed * time_step
+            robot.transform.rot.sin = math.sin(angle)
+            robot.transform.rot.cos = math.cos(angle)
+
+        for i in range(len(self.robots)):
+            for j in range(i+1, len(self.robots)):
+                r1, r2 = self.robots[i], self.robots[j]
+
+                dist = (r1.transform.pos[0] - r2.transform.pos[0]) ** 2 + (r1.transform.pos[1] - r2.transform.pos[1]) ** 2
+
+                if dist < ((r1.body_radius + r2.body_radius) ** 2):
+                    print 'collision'
 
         self.step_count += 1
-        self.clock += self.time_step
+        self.clock += time_step
 
-        self.signal('think')
-        for child in self.children:
-            child.think()
+class Robot(object):
+    def __init__(self, position=(0, 0), angle=0, body_radius=0.06, wheels_distance=0.0825, wheels_size=(0.017, 0.03), wheels_radius=0.02, wheels_max_angular_speed=12.56):
+        self.transform = Transform(position, Rotation(angle))
 
-    def _on_add(self, child):
-        child.realize(self)
+        self.body_radius = body_radius
 
+        self.wheels_distance = wheels_distance
+        self.wheels_size = wheels_size
+        self.wheels_radius = wheels_radius
 
-class Controller(Node):
-    def __init__(self):
-        super(Controller, self).__init__()
-        self._sensor_nodes = []
-        self._actuator_nodes = []
-        self.sensors = {}
-        self.actuators = {}
+        self.wheels_angular_speed = (0, 0)
+        self.wheels_max_angular_speed = wheels_max_angular_speed
 
-        self.connect('added', self._on_added)
-
-    def _on_added(self, parent):
-        self._sensor_nodes = parent.filter(Sensor)
-        self._actuator_nodes = parent.filter(Actuator)
-
-    def update_sensors(self):
-        for sensor in self._sensor_nodes:
-            if sensor.id is None:
-                continue
-
-            values = sensor.values
-            for i in range(len(values)):
-                self.sensors[sensor.id + str(i)] = values[i]
-
-    def update_actuators(self):
-        for actuator in self._actuator_nodes:
-            if actuator.id is None:
-                continue
-
-            values = actuator.values
-            new_values = [ 0.0 for i in range(len(values)) ]
-            for i in range(len(values)):
-                new_values[i] = self.actuators[actuator.id + str(i)]
-
-            actuator.values = new_values
-
-class Vector(object):
-    def __init__(self, x=None, y=None):
-        if x is None:
-            raise ValueError("first positional argument can not be 'None'")
-
-        if isinstance(x, Box2D.b2Vec2):
-            self.x = x.x
-            self.y = x.y
-        elif isinstance(x, tuple):
-            self.x, self.y = x
-        else:
-            if y is None:
-                raise ValueError("parameter 'y' can not be 'None'")
-
-            self.x = x
-            self.y = y
-
-    def to_b2Vec2(self):
-        return Box2D.b2Vec2((self.x, self.y))
-
-    def dot(self, other):
-        if isinstance(other, Vector):
-            return self.x * other.x + self.y * other.y
-
-        raise ArithmeticError('cannot dot product vector by non-vector')
-
-    def __mul__(self, other):
-        if isinstance(other, int) or isinstance(other, long) or isinstance(other, float):
-            return Vector(other * self.x, other * self.y)
-
-        raise ArithmeticError('cannot multiply vector by non-numeric')
-
-    def __add__(self, other):
-        if isinstance(other, Vector):
-            return Vector(self.x + other.x, self.y + other.y)
-
-        raise ArithmeticError('cannot dot product vector by non-vector')
+        self.linear_velocity = (0,0)
+        self.angular_speed = 0
 
     def __str__(self):
-        return "(%.2f, %.2f)" % (self.x, self.y)
-
-class BoundingRectangle(object):
-    def __init__(self, low, high):
-        self.low = low
-        self.high = high
-
-    def union(self, other):
-        if other is not None:
-            if other.low.x < self.low.x: self.low.x = other.low.x
-            if other.low.y < self.low.y: self.low.y = other.low.y
-            if other.high.x > self.high.x: self.high.x = other.high.x
-            if other.high.y > self.high.y: self.high.y = other.high.y
-
-class AttrDef(object):
-    def __init__(self, obj, key, read_only=True):
-        self.obj = obj
-        self.key = key
-        self.read_only = read_only
-        self.getter = getattr(obj, 'get_'+key)
-        if not self.read_only:
-            self.setter = getattr(obj, 'set_'+key)
-        else:
-            self.setter = None
-
-class Body(Node):
-    def __init__(self, position=Vector(0.0, 0.0), **kwargs):
-        super(Body, self).__init__(**kwargs)
-        self.position = position
-        self.shapes = []
-        self.joints = []
-        self._body = None
-        self._world_center = Vector(0, 0)
-
-    def add_shape(self, shape):
-        self.shapes.append(shape)
-        shape.added(self)
-
-    def add_joint(self, joint, anchor=Vector(0.0, 0.0)):
-        self.joints.append(joint)
-        joint.added(self, anchor)
-
-    def to_b2Body(self):
-        return self._body
-
-    def bounding_rectangle(self):
-        rect = None
-
-        for shape in self.shapes:
-            shape_rect = shape.bounding_rectangle()
-
-            if shape_rect is None:
-                continue
-
-            if rect is None:
-                rect = shape_rect
-            else:
-                rect.union(shape_rect)
-
-        for child in self.children:
-            child_rect = child.bounding_rectangle()
-
-            if child_rect is None:
-                continue
-
-            if rect is None:
-                rect = child_rect
-            else:
-                rect.union(child_rect)
-
-        return rect
-
-    def world_vector(self, local_vector):
-        if self._body is None:
-            return local_vector
-
-        world_vector = self._body.GetWorldVector(local_vector.to_b2Vec2())
-
-        return Vector(world_vector.x, world_vector.y)
-
-    @property
-    def world_center(self):
-        if self._body is None:
-            return Vector(0.0, 0.0)
-
-        center = self._body.worldCenter
-        self._world_center.x = center.x
-        self._world_center.y = center.y
-
-        return self._world_center
-
-    @property
-    def transform(self):
-        if self._body is None:
-            return None
-
-        return self._body.transform
-
-class DynamicBody(Body):
-    def __init__(self, **kwargs):
-        super(DynamicBody, self).__init__(**kwargs)
-        self.controller = None
-
-        self.connect('realize', self._on_realize)
-        self.connect('think', self._on_think)
-
-    def set_controller(self, controller):
-        self.controller = controller
-        controller.added(self)
-
-    def _on_realize(self, world):
-        self._body = world.to_b2World().CreateDynamicBody(position=self.position.to_b2Vec2())
-        self._body.userData = self
-
-        for shape in self.shapes:
-            shape.realize(world)
-
-        for joint in self.joints:
-            joint.realize(world)
-
-    def _on_think(self):
-        if self.controller is not None:
-            self.controller.think()
-
-    @property
-    def linear_velocity(self):
-        if self._body is None:
-            return Vector(0.0, 0.0)
-
-        vel = self._body.linearVelocity
-
-        return Vector(vel.x, vel.y)
-
-    @linear_velocity.setter
-    def linear_velocity(self, vector):
-        if self._body is None:
-            return
-
-        self._body.linearVelocity = vector.to_b2Vec2()
-
-    def apply_force(self, force, position, wake=True):
-        if self._body is None:
-            return
-
-        return self._body.ApplyForce(force.to_b2Vec2(), position.to_b2Vec2(), wake=wake)
-
-class StaticBody(Body):
-    def __init__(self, **kwargs):
-        super(StaticBody, self).__init__(**kwargs)
-        self.connect('realize', self._on_realize)
-
-    def _on_realize(self, world):
-        self._body = world.to_b2World().CreateStaticBody(position=self.position.to_b2Vec2())
-        self._body.userData = self
-
-        for shape in self.shapes:
-            shape.realize(world)
-
-        for joint in self.joints:
-            joint.realize(world)
-
-
-class Actuator(Node):
-    def __init__(self, **kwargs):
-        super(Actuator, self).__init__(**kwargs)
-
-
-class Sensor(Node):
-    def __init__(self, **kwargs):
-        super(Sensor, self).__init__(**kwargs)
-
-
-class RaycastSensor(Sensor):
-    def raycast(self, callback, origin, dest):
-        cb_instance = self._RaycastCallback(callback)
-        self.world.to_b2World().RayCast(cb_instance, origin, dest)
-
-    class _RaycastCallback(Box2D.b2RayCastCallback):
-        def __init__(self, callback, **kwargs):
-            Box2D.b2RayCastCallback.__init__(self)
-            self.callback = callback
-
-        def ReportFixture(self, fixture, point, normal, fraction):
-            return self.callback(fixture.userData, Vector(point), Vector(normal), fraction)
-
-class Shape(Node):
-    def __init__(self, density=1, color=(64, 255, 0), **kwargs):
-        super(Shape, self).__init__(**kwargs)
-        self.density = density
-        self.color = color
-
-class PolygonShape(Shape):
-    def __init__(self, vertices=[], **kwargs):
-        super(PolygonShape, self).__init__(**kwargs)
-        self._vertices = vertices
-
-        self.connect('realize', self._on_realize)
-
-    def _on_realize(self, world):
-        vert = [ v.to_b2Vec2() for v in self._vertices ]
-        self._fixture = self.parent.to_b2Body().CreatePolygonFixture(
-            vertices=vert, density=self.density,
-            categoryBits=self.category_bits, maskBits=self.mask_bits)
-        self._fixture.userData = self
-
-    @property
-    def vertices(self):
-        transformed = []
-
-        for vertex in self._vertices:
-            transformed.append(self.parent.transform * vertex.to_b2Vec2())
-
-        return transformed
-
-    def bounding_rectangle(self):
-        vertices = self.vertices
-        low = Vector(0, 0)
-        high = Vector(0, 0)
-        low.x, low.y = (vertices[0].x, vertices[0].y)
-        high.x, high.y = (vertices[0].x, vertices[0].y)
-
-        for vertex in vertices[1:]:
-            if vertex.x < low.x:  low.x = vertex.x
-            if vertex.y < low.y:  low.y = vertex.y
-            if vertex.x > high.x: high.x = vertex.x
-            if vertex.y > high.y: high.y = vertex.y
-
-        return BoundingRectangle(low, high)
-
-class CircleShape(Shape):
-    def __init__(self, radius=1, **kwargs):
-        super(CircleShape, self).__init__(**kwargs)
-        self.radius = radius
-
-        self.connect('realize', self._on_realize)
-
-    def _on_realize(self, world):
-        self._fixture = self.parent.to_b2Body().CreateCircleFixture(
-            radius=self.radius, density=self.density,
-            categoryBits=self.category_bits, maskBits=self.mask_bits)
-        self._fixture.userData = self
-
-    @property
-    def center(self):
-        return self.parent.transform * self._fixture.shape.pos
-
-    @property
-    def orientation(self):
-        return self.parent.transform.R.col2
-
-    def bounding_rectangle(self):
-        center = self.center
-        low = Vector(center.x - self.radius, center.y - self.radius)
-        high = Vector(center.x + self.radius, center.y + self.radius)
-        return BoundingRectangle(low, high)
-
-class Joint(Node):
-    def added(self, parent, anchor):
-        self.parent = parent
-        self.signal('added', parent, anchor)
-
-class WeldJoint(Joint):
-    def __init__(self, target=None, target_anchor=None, **kwargs):
-        super(WeldJoint, self).__init__(**kwargs)
-
-        if target is None or target_anchor is None:
-            raise ValueError("'target' and 'target_anchor' can not be 'None'")
-
-        self.body1 = target
-        self.body1_anchor = target_anchor
-
-        self.connect('added', self._on_added)
-        self.connect('realize', self._on_realize)
-
-    def _on_added(self, parent, anchor):
-        self.body2 = parent
-        self.body2_anchor = anchor
-
-    def _on_realize(self, world):
-        world.to_b2World().CreateWeldJoint(bodyA=self.body1.to_b2Body(), localAnchorA=self.body1_anchor.to_b2Vec2(),
-                bodyB=self.body2.to_b2Body(), localAnchorB=self.body2_anchor.to_b2Vec2())
+        return "Robot(transform=%s, linear_velocity=%s, angular_speed=%.2f)" % (str(self.transform), str(self.linear_velocity), self.angular_speed)
+
+    @staticmethod
+    def rpm_to_angular_speed(rpm):
+        return 2 * math.pi * (rpm / 60.0)

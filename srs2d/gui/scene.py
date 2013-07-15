@@ -34,7 +34,6 @@ import Box2D
 
 import dropdown
 from .. import physics
-from .. import robot
 
 __log__ = logging.getLogger(__name__)
 
@@ -80,41 +79,12 @@ class Scene(object):
         self.offset = (-self.resolution[0]/2, -self.resolution[1]/2)
 
         self.world = physics.World()
+        # robots = [ self.world.create_robot((random.uniform(-2, 2), random.uniform(-2, 2))) for i in range(30) ]
+        robot = self.world.create_robot((0,0))
+        robot.wheels_angular_speed = (-12, -10)
 
-        D = [1.2, 1.5, 1.9, 2.3, 2.7]
-        H = 4.20
-        W = random.uniform(4.20, 4.90)
-        d = D[int(math.floor(random.uniform(0, 4)))]
-        x = math.sqrt(((d / 2.0) ** 2) / 2.0)
-        self.world.add(robot.ColorPadActuator(center=physics.Vector(-x, x), radius=0.27))
-        self.world.add(robot.ColorPadActuator(center=physics.Vector(x, -x), radius=0.27))
-
-        VERTICAL_WALL_VERTICES = [ physics.Vector(-0.01, H/2.0), physics.Vector(0.01, H/2.0),
-                                   physics.Vector(0.01, -H/2.0), physics.Vector(-0.01, -H/2.0) ]
-
-        HORIZONTAL_WALL_VERTICES = [ physics.Vector(-W/2.0-0.01, 0.01), physics.Vector(W/2.0+0.01, 0.01),
-                                     physics.Vector(W/2.0+0.01, -0.01), physics.Vector(-W/2.0-0.01, -0.01) ]
-
-        wall = physics.StaticBody(position=physics.Vector(-W/2.0, 0))
-        wall.add_shape(physics.PolygonShape(vertices=VERTICAL_WALL_VERTICES))
-        self.world.add(wall)
-
-        wall = physics.StaticBody(position=physics.Vector(0.0, -H/2.0))
-        wall.add_shape(physics.PolygonShape(vertices=HORIZONTAL_WALL_VERTICES))
-        self.world.add(wall)
-
-        wall = physics.StaticBody(position=physics.Vector(W/2.0, 0))
-        wall.add_shape(physics.PolygonShape(vertices=VERTICAL_WALL_VERTICES))
-        self.world.add(wall)
-
-        wall = physics.StaticBody(position=physics.Vector(0.0, H/2.0))
-        wall.add_shape(physics.PolygonShape(vertices=HORIZONTAL_WALL_VERTICES))
-        self.world.add(wall)
-
-        NUM_ROBOTS = 12
-        self.robots = [robot.Robot(position=physics.Vector( random.uniform(-W/2.0+0.12,W/2.0-0.12), random.uniform(-H/2.0+0.12, H/2.0-0.12) )) for i in range(NUM_ROBOTS)]
-        for rob in self.robots:
-            self.world.add(rob)
+        robot2 = self.world.create_robot((0.5,0))
+        robot2.wheels_angular_speed = (-10, -12)
 
     def start(self):
         self.running = True
@@ -129,12 +99,13 @@ class Scene(object):
         return self.running
 
     def add_robot(self, pos):
-        rob = robot.Robot(position=self._to_world(pos))
-        self.world.add(rob)
-        # rob.power = (random.uniform(-1.0, 1.0), random.uniform(-1.0, 1.0))
-        # rob.front_led.on = random.uniform(0,1) > 0.5
-        # rob.rear_led.on = random.uniform(0,1) > 0.5
-        self.robots.append(rob)
+        # rob = robot.Robot(position=self._to_world(pos))
+        # self.world.add(rob)
+        # # rob.power = (random.uniform(-1.0, 1.0), random.uniform(-1.0, 1.0))
+        # # rob.front_led.on = random.uniform(0,1) > 0.5
+        # # rob.rear_led.on = random.uniform(0,1) > 0.5
+        # self.robots.append(rob)
+        pass
 
     def on_mouse_down(self, event):
         self.dropdown.on_mouse_down(event)
@@ -156,19 +127,19 @@ class Scene(object):
         self.dropdown.on_mouse_move(event)
 
     def _check_selection(self, event):
-        for obj in self.world.children: # just nodes attached directly in world
-            if not isinstance(obj, physics.Body):
-                continue
+        # for obj in self.world.children: # just nodes attached directly in world
+        #     if not isinstance(obj, physics.Body):
+        #         continue
 
-            square = obj.bounding_rectangle()
+        #     square = obj.bounding_rectangle()
 
-            # convert to screen points (swap high_y and low_y because of the screen y-flip)
-            low_x, high_y = self._to_screen(square.low)
-            high_x, low_y = self._to_screen(square.high)
+        #     # convert to screen points (swap high_y and low_y because of the screen y-flip)
+        #     low_x, high_y = self._to_screen(square.low)
+        #     high_x, low_y = self._to_screen(square.high)
 
-            if (event.x >= low_x) and (event.y >= low_y) and \
-               (event.x <= high_x) and (event.y <= high_y):
-                return obj
+        #     if (event.x >= low_x) and (event.y >= low_y) and \
+        #        (event.x <= high_x) and (event.y <= high_y):
+        #         return obj
 
         return None
 
@@ -180,18 +151,17 @@ class Scene(object):
 
     def draw(self):
         if self.running or self.do_step:
-            self.world.time_step = 1.0 / self.target_fps
-            self.world.step()
+            self.world.step(1.0 / self.target_fps)
             self.do_step = False
 
         self.screen.fill(self.background)
         self.surface.fill(self.background)
         self.__write_pos = 30
 
-        for node in self.world.children:
-            self.draw_nodes_recursive(node)
+        for robot in self.world.robots:
+            self.draw_robot(robot)
 
-        self.draw_circle(self._to_screen(Box2D.b2Vec2(0,0)), 0.02 * self.zoom, fill=(255,255,255))
+        # self.draw_circle(self._to_screen(Box2D.b2Vec2(0,0)), 0.02 * self.zoom, fill=(255,255,255))
 
         self.dropdown.draw(self.surface)
 
@@ -209,8 +179,8 @@ class Scene(object):
     def _to_screen(self, point):
         """Transform a world point to screen point."""
 
-        x = ((point.x + self.center.x) * self.zoom) - self.offset[0]
-        y = ((point.y + self.center.y) * self.zoom) - self.offset[1]
+        x = ((point[0] + self.center.x) * self.zoom) - self.offset[0]
+        y = ((point[1] + self.center.y) * self.zoom) - self.offset[1]
         y = self.resolution[1] - y
 
         return (int(x), int(y))
@@ -223,7 +193,13 @@ class Scene(object):
         x = (float(x + self.offset[0]) / self.zoom) - self.center.x
         y = (float(y + self.offset[1]) / self.zoom) - self.center.y
 
-        return physics.Vector(x, y)
+        return (x, y)
+
+    def draw_robot(self, robot):
+        center = self._to_screen(robot.transform.pos)
+        radius = robot.body_radius * self.zoom
+        orientation = (robot.transform.rot.sin, robot.transform.rot.cos)
+        self.draw_circle(center, radius, orientation=orientation, fill=(255,0,0,128), border=(255,0,0,255))
 
     def draw_nodes_recursive(self, node):
         if node.realized:
@@ -255,11 +231,11 @@ class Scene(object):
         #     self.surface.blit(self.font.render(str(node.values[0]), True, (255,255,255)), (origin[0] + 15, origin[1]+5))
         #     self.surface.blit(self.font.render(str(node.values[1]), True, (255,255,255)), (origin[0] + 15, origin[1]-5))
 
-        elif isinstance(node, robot.ColorPadActuator):
-            center = self._to_screen(node.center)
-            radius = node.radius * self.zoom
+        # elif isinstance(node, robot.ColorPadActuator):
+        #     center = self._to_screen(node.center)
+        #     radius = node.radius * self.zoom
 
-            self.draw_circle(center, radius, fill=(0, 255, 255, 64))
+        #     self.draw_circle(center, radius, fill=(0, 255, 255, 64))
 
     def draw_shape(self, shape):
         if shape.color is None:
