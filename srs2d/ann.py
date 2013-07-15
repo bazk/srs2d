@@ -25,49 +25,45 @@ import physics
 
 __log__ = logging.getLogger(__name__)
 
-class NeuralNetworkController(physics.Controller):
+NUM_INPUTS      = 13
+NUM_OUTPUTS     = 4
+NUM_HIDDEN      = 3
+
+IN_camera0      =  0
+IN_camera1      =  1
+IN_camera2      =  2
+IN_camera3      =  3
+IN_proximity0   =  4
+IN_proximity1   =  5
+IN_proximity2   =  6
+IN_proximity3   =  7
+IN_proximity4   =  8
+IN_proximity5   =  9
+IN_proximity6   = 10
+IN_proximity7   = 11
+IN_ground0      = 12
+
+OUT_wheels0     =  0
+OUT_wheels1     =  1
+OUT_front_led0  =  2
+OUT_rear_led0   =  3
+
+HID_hidden0     =  0
+HID_hidden1     =  1
+HID_hidden2     =  2
+
+class NeuralNetworkController(object):
     def __init__(self):
         super(NeuralNetworkController, self).__init__()
 
-        self.connect('think', self.on_think)
+        self.weights = [ [ random.uniform(-5.0, 5.0) for ih in range(NUM_INPUTS+NUM_HIDDEN) ] for o in range(NUM_OUTPUTS) ]
+        self.bias = [ random.uniform(-5.0, 5.0) for o in range(NUM_OUTPUTS) ]
 
-        self._inputs = [
-            'camera0',
-            'camera1',
-            'camera2',
-            'camera3',
-            'proximity3',
-            'proximity2',
-            'proximity1',
-            'proximity0',
-            'proximity7',
-            'proximity6',
-            'proximity5',
-            'proximity4',
-            'ground0'
-        ]
+        self.weights_hidden = [ [ random.uniform(-5.0, 5.0) for i in range(NUM_INPUTS) ] for h in range(NUM_HIDDEN) ]
+        self.bias_hidden = [ random.uniform(-5.0, 5.0) for h in range(NUM_HIDDEN) ]
+        self.timec_hidden = [ random.uniform(0, 1.0) for h in range(NUM_HIDDEN) ]
 
-        self._hiddens = [
-            'hidden0',
-            'hidden1',
-            'hidden2'
-        ]
-
-        self._outputs = [
-            'wheels1',
-            'wheels0',
-            'rear_led0',
-            'front_led0'
-        ]
-
-        self.weights = { o: { ih: random.uniform(-5.0, 5.0) for ih in self._inputs + self._hiddens } for o in self._outputs }
-        self.bias = { o: random.uniform(-5.0, 5.0) for o in self._outputs }
-
-        self.weights_hidden = { h: { i: random.uniform(-5.0, 5.0) for i in self._inputs } for h in self._hiddens }
-        self.bias_hidden = { h: random.uniform(-5.0, 5.0) for h in self._hiddens }
-        self.timec_hidden = { h: random.uniform(0, 1.0) for h in self._hiddens }
-
-        self.H = { h: 0.0 for h in self._hiddens }
+        self.H = [ 0.0 for h in range(NUM_HIDDEN) ]
 
     def export(self):
         return {
@@ -85,29 +81,25 @@ class NeuralNetworkController(physics.Controller):
         self.bias_hidden = data['bias_hidden']
         self.timec_hidden = data['timec_hidden']
 
-    def on_think(self):
-        self.update_sensors()
-
+    def think(self, sensors, actuators):
         def sigmoid(z):
             return 1.0 / (1.0 + math.exp(-z))
 
-        for h in self._hiddens:
+        for h in range(NUM_HIDDEN):
             aux = 0.0
-            for i in self._inputs:
+            for i in range(NUM_INPUTS):
                 aux += self.weights_hidden[h][i] * \
-                    self.sensors[i] + self.bias_hidden[h]
+                    sensors[i] + self.bias_hidden[h]
 
             self.H[h] = self.timec_hidden[h] * self.H[h] + \
                   (1 - self.timec_hidden[h]) * sigmoid(aux)
 
-        for o in self._outputs:
+        for o in range(NUM_OUTPUTS):
             aux = 0.0
-            for i in self._inputs:
-                aux += self.weights[o][i] * self.sensors[i]
-            for h in self._hiddens:
-                aux += self.weights[o][h] * self.H[h]
+            for i in range(NUM_INPUTS):
+                aux += self.weights[o][i] * sensors[i]
+            for h in range(NUM_HIDDEN):
+                aux += self.weights[o][h+NUM_INPUTS] * self.H[h]
             aux += self.bias[o]
 
-            self.actuators[o] = sigmoid(aux)
-
-        self.update_actuators()
+            actuators[o] = sigmoid(aux)

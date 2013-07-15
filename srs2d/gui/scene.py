@@ -31,6 +31,7 @@ import logging
 import threading
 import pygame
 import Box2D
+import pyopencl as cl
 
 import dropdown
 from .. import physics
@@ -78,13 +79,15 @@ class Scene(object):
         self.center = Box2D.b2Vec2(0, 0)
         self.offset = (-self.resolution[0]/2, -self.resolution[1]/2)
 
-        self.world = physics.World()
+        context = cl.create_some_context()
+        queue = cl.CommandQueue(context)
+        self.world = physics.World(context, queue)
         # robots = [ self.world.create_robot((random.uniform(-2, 2), random.uniform(-2, 2))) for i in range(30) ]
-        robot = self.world.create_robot((0,0))
-        robot.wheels_angular_speed = (-12, -10)
+        # robot = self.world.create_robot((0,0))
+        # robot.wheels_angular_speed = (-12, -10)
 
-        robot2 = self.world.create_robot((0.5,0))
-        robot2.wheels_angular_speed = (-10, -12)
+        # robot2 = self.world.create_robot((0.5,0))
+        # robot2.wheels_angular_speed = (-10, -12)
 
     def start(self):
         self.running = True
@@ -158,8 +161,8 @@ class Scene(object):
         self.surface.fill(self.background)
         self.__write_pos = 30
 
-        for robot in self.world.robots:
-            self.draw_robot(robot)
+        # for robot in self.world.robots:
+        #     self.draw_robot(robot)
 
         # self.draw_circle(self._to_screen(Box2D.b2Vec2(0,0)), 0.02 * self.zoom, fill=(255,255,255))
 
