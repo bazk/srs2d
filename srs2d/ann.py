@@ -82,6 +82,8 @@ class NeuralNetworkController(object):
         self.timec_hidden = data['timec_hidden']
 
     def think(self, sensors, actuators):
+        print sensors
+        
         def sigmoid(z):
             return 1.0 / (1.0 + math.exp(-z))
 

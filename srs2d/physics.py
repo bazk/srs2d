@@ -98,7 +98,7 @@ class World(object):
         kernel.set_scalar_arg_dtypes((np.float32, None))
         kernel(self.queue, (self.num_robots,), None, time_step, self.robots)
 
-        self.prg.step_sensors(self.queue, (self.num_robots,), None, self.robots, self.in_buf)
+        self.prg.step_sensors(self.queue, (self.num_robots,), None, self.robots, self.target_areas, self.in_buf)
         cl.enqueue_copy(self.queue, self.inputs, self.in_buf)
 
         for gid in range(self.num_robots):
@@ -109,36 +109,3 @@ class World(object):
         self.step_count += 1
         self.clock += time_step
 
-    #     for i in range(len(self.robots)):
-    #         for j in range(len(self.robots)):
-    #             r1, r2 = self.robots[i], self.robots[j]
-
-    #             dist = (r1.transform.pos[0] - r2.transform.pos[0]) ** 2 + (r1.transform.pos[1] - r2.transform.pos[1]) ** 2
-
-    #             if j > i:
-    #                 if dist < ((r1.body_radius + r2.body_radius) ** 2):
-    #                     if random.randint(0,1) == 0:
-    #                         r1.collision_count += 1
-    #                         r1.transform.pos = (random.uniform(-2,2),random.uniform(-2,2))
-    #                     else:
-    #                         r2.collision_count += 1
-    #                         r2.transform.pos = (random.uniform(-2,2),random.uniform(-2,2))
-
-    #             if dist < ((r1.body_radius + ir_radius + r2.body_radius) ** 2):
-    #                 pass # ir
-
-    #             if dist < ((r1.body_radius + camera_radius + r2.body_radius) ** 2):
-    #                 pass # camera
-
-    #         for a in range(len(self.target_areas)):
-    #             r = self.robots[i]
-    #             x,y = self.target_areas[a].center
-    #             radius = self.target_areas[a].radius
-
-    #             dist = (r.transform.pos[0] - x) ** 2 + (r.transform.pos[1] - y) ** 2
-
-    #             if dist < (radius ** 2):
-    #                 pass # in target area
-
-    #     self.step_count += 1
-    #     self.clock += time_step
