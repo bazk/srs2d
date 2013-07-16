@@ -21,6 +21,7 @@ __date__ = "13 Jul 2013"
 import os
 import logging
 import math
+import random
 import numpy as np
 import pyopencl as cl
 import pyopencl.array as clarray
@@ -84,8 +85,14 @@ class World(object):
         self.outputs = np.zeros(num_robots * NUM_OUTPUTS, dtype=np.float32)
         self.out_buf = cl.Buffer(context, cl.mem_flags.COPY_HOST_PTR, hostbuf=self.outputs)
 
+        # initialize random number generator
+        self.ranluxcl = cl.Buffer(context, 0, num_robots * 112)
+        kernel = self.prg.init_ranluxcl
+        kernel.set_scalar_arg_dtypes((np.uint32, None))
+        kernel(queue, (num_robots,), None, random.randint(0, 4294967295), self.ranluxcl)
+
         # initialize robots and target_areas
-        self.prg.init_robots(queue, (num_robots,), None, self.robots)
+        self.prg.init_robots(queue, (num_robots,), None, self.ranluxcl, self.robots)
         kernel = self.prg.init_target_areas
         kernel.set_scalar_arg_dtypes((None, np.float32))
         kernel(queue, (2,), None, self.target_areas, target_areas_distance)
@@ -98,7 +105,7 @@ class World(object):
         kernel.set_scalar_arg_dtypes((np.float32, None))
         kernel(self.queue, (self.num_robots,), None, time_step, self.robots)
 
-        self.prg.step_sensors(self.queue, (self.num_robots,), None, self.robots, self.target_areas, self.in_buf)
+        self.prg.step_sensors(self.queue, (self.num_robots,), None, self.ranluxcl, self.robots, self.target_areas, self.in_buf)
         cl.enqueue_copy(self.queue, self.inputs, self.in_buf)
 
         for gid in range(self.num_robots):
@@ -109,3 +116,9 @@ class World(object):
         self.step_count += 1
         self.clock += time_step
 
+    def get_transforms(self):
+        transforms = np.zeros(self.num_robots, dtype=np.dtype((np.float32, (4,))))
+        trans_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=transforms)
+        self.prg.get_transform_matrices(self.queue, (self.num_robots,), None, self.robots, trans_buf)
+        cl.enqueue_copy(self.queue, transforms, trans_buf)
+        return transforms

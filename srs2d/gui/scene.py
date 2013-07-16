@@ -81,13 +81,9 @@ class Scene(object):
 
         context = cl.create_some_context()
         queue = cl.CommandQueue(context)
-        self.world = physics.World(context, queue)
-        # robots = [ self.world.create_robot((random.uniform(-2, 2), random.uniform(-2, 2))) for i in range(30) ]
-        # robot = self.world.create_robot((0,0))
-        # robot.wheels_angular_speed = (-12, -10)
 
-        # robot2 = self.world.create_robot((0.5,0))
-        # robot2.wheels_angular_speed = (-10, -12)
+        self.world = physics.World(context, queue)
+        self.transforms = self.world.get_transforms()
 
     def start(self):
         self.running = True
@@ -157,14 +153,18 @@ class Scene(object):
             self.world.step(1.0 / self.target_fps)
             self.do_step = False
 
+            self.transforms = self.world.get_transforms()
+
         self.screen.fill(self.background)
         self.surface.fill(self.background)
         self.__write_pos = 30
 
-        # for robot in self.world.robots:
-        #     self.draw_robot(robot)
-
-        # self.draw_circle(self._to_screen(Box2D.b2Vec2(0,0)), 0.02 * self.zoom, fill=(255,255,255))
+        if self.transforms is not None:
+            for transform in self.transforms:
+                center = self._to_screen((transform[0], transform[1]))
+                radius = 0.06 * self.zoom
+                orientation = (transform[2], transform[3])
+                self.draw_circle(center, radius, orientation=orientation, fill=(255,0,0,128), border=(255,0,0,255))
 
         self.dropdown.draw(self.surface)
 
