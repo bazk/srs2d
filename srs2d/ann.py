@@ -103,3 +103,6 @@ class NeuralNetworkController(object):
             aux += self.bias[o]
 
             actuators[o] = sigmoid(aux)
+
+        actuators[OUT_front_led0] = 1.0;
+        actuators[OUT_rear_led0] = 1.0;

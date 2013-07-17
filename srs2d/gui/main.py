@@ -46,6 +46,7 @@ class Main(gtk.Window):
     def __init__(self):
         super(Main, self).__init__()
         self.set_name("SRS2D Viewer")
+        self.set_role("srs2d-viewer")
 
         self.connect("destroy", self.exit)
 

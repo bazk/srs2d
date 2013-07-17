@@ -75,14 +75,14 @@ class Scene(object):
         self.dropdown = dropdown.DropDown(self.font)
         self.dropdown.add_item('Add robot', callback=self.add_robot)
 
-        self.zoom = 120
+        self.zoom = 180
         self.center = Box2D.b2Vec2(0, 0)
         self.offset = (-self.resolution[0]/2, -self.resolution[1]/2)
 
         context = cl.create_some_context()
         queue = cl.CommandQueue(context)
 
-        self.world = physics.World(context, queue)
+        self.world = physics.World(context, queue, num_robots=2)
         self.transforms = self.world.get_transforms()
 
     def start(self):
@@ -148,6 +148,14 @@ class Scene(object):
     def on_deselect_shape(self, shape):
         print 'on_deselect_shape'
 
+    def rot_mul_vec(self, rot, vec):
+        return ( rot[1] * vec[0] - rot[0] * vec[1],
+                 rot[0] * vec[0] + rot[1] * vec[1] )
+
+    def transform_mul_vec(self, transform, vec):
+        return ( (transform[3] * vec[0] - transform[2] * vec[1]) + transform[0],
+                 (transform[2] * vec[0] + transform[3] * vec[1]) + transform[1] )
+
     def draw(self):
         if self.running or self.do_step:
             self.world.step(1.0 / self.target_fps)
@@ -160,11 +168,33 @@ class Scene(object):
         self.__write_pos = 30
 
         if self.transforms is not None:
-            for transform in self.transforms:
+            transform = self.transforms[0]
+            center = self._to_screen((transform[0], transform[1]))
+            radius = 0.06 * self.zoom
+            orientation = (transform[2], transform[3])
+            self.draw_circle(center, radius, orientation=orientation, fill=(255,255,0,128), border=(255,255,0,255))
+
+            for transform in self.transforms[1:]:
                 center = self._to_screen((transform[0], transform[1]))
                 radius = 0.06 * self.zoom
                 orientation = (transform[2], transform[3])
                 self.draw_circle(center, radius, orientation=orientation, fill=(255,0,0,128), border=(255,0,0,255))
+
+            if len(self.transforms) > 1:
+                orig = (self.transforms[0][0], self.transforms[0][1])
+                dest = self.transform_mul_vec(self.transforms[1], (0.07, 0))
+
+                ao = math.atan2(self.transforms[0][2], self.transforms[0][3])
+                ad = math.atan2(dest[1] - orig[1], dest[0] - orig[0])
+
+                if abs(ao - ad) <= math.radians(36):
+                    self.draw_segment(self._to_screen(orig), self._to_screen(dest), (0,0,255))
+
+                dest2 = self.transform_mul_vec(self.transforms[1], (-0.07, 0))
+                ad2 = math.atan2(dest2[1] - orig[1], dest2[0] - orig[0])
+
+                if abs(ao - ad2) <= math.radians(36):
+                    self.draw_segment(self._to_screen(orig), self._to_screen(dest2), (0,255,255))
 
         self.dropdown.draw(self.surface)
 
@@ -305,7 +335,7 @@ class Scene(object):
 
             if orientation:
                 pygame.draw.line(self.surface, border, center,
-                        (center[0] + radius*orientation[0], center[1] - radius*orientation[1]))
+                        (center[0] + radius*orientation[1], center[1] - radius*orientation[0]))
 
     def draw_segment_shape(self, shape, transform, fill=None):
         v1 = self._to_screen(Box2D.b2Mul(transform, shape.vertex1))

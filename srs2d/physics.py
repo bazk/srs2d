@@ -105,13 +105,15 @@ class World(object):
         kernel.set_scalar_arg_dtypes((np.float32, None))
         kernel(self.queue, (self.num_robots,), None, time_step, self.robots)
 
-        self.prg.step_sensors(self.queue, (self.num_robots,), None, self.ranluxcl, self.robots, self.target_areas, self.in_buf)
+        self.prg.step_sensors(self.queue, (self.num_robots,), None, self.ranluxcl, self.robots, self.target_areas, self.in_buf, self.out_buf)
         cl.enqueue_copy(self.queue, self.inputs, self.in_buf)
 
         for gid in range(self.num_robots):
             inputs = self.inputs[gid*NUM_INPUTS:gid*NUM_INPUTS+NUM_INPUTS]
             outputs = self.outputs[gid*NUM_OUTPUTS:gid*NUM_OUTPUTS+NUM_OUTPUTS]
             self.controllers[gid].think(inputs, outputs)
+            # if gid == 0:
+            #     print inputs[0:4]
 
         self.step_count += 1
         self.clock += time_step
