@@ -20,13 +20,9 @@ __date__ = "13 Jul 2013"
 
 import os
 import logging
-import math
 import random
 import numpy as np
 import pyopencl as cl
-import pyopencl.array as clarray
-from pyopencl.tools import get_or_register_dtype, match_dtype_to_c_struct
-import ann
 
 __log__ = logging.getLogger(__name__)
 
@@ -49,7 +45,7 @@ class World(object):
     """
 
 
-    def __init__(self, context, queue, num_worlds=1, num_robots=9, target_areas_distance=1.2):
+    def __init__(self, context, queue, num_worlds=1, num_robots=9, time_step=1/30.0, dynamics_iterations=4):
         global NUM_INPUTS, NUM_OUTPUTS
 
         self.step_count = 0.0
@@ -60,9 +56,13 @@ class World(object):
 
         self.num_worlds = num_worlds
         self.num_robots = num_robots
+        self.time_step = time_step
+        self.dynamics_iterations = dynamics_iterations
+
+        options = '-DROBOTS_PER_WORLD=%d -DTIME_STEP=%f -DDYNAMICS_ITERATIONS=%d' % (num_robots, time_step, dynamics_iterations)
 
         src = open(os.path.join(os.path.dirname(__file__), 'kernels/physics.cl'), 'r')
-        self.prg = cl.Program(context, src.read()).build(options='-D ROBOTS_PER_WORLD=%d' % num_robots)
+        self.prg = cl.Program(context, src.read()).build(options=options)
 
         # query the structs sizes
         sizeof = np.zeros(1, dtype=np.int32)
@@ -72,27 +72,14 @@ class World(object):
         cl.enqueue_copy(queue, sizeof, sizeof_buf)
         sizeof_world_t = int(sizeof[0])
 
-        self.prg.size_of_target_area_t(queue, (1,), None, sizeof_buf).wait()
-        cl.enqueue_copy(queue, sizeof, sizeof_buf)
-        size_of_target_area_t = int(sizeof[0])
-
         # create buffers
         self.worlds = cl.Buffer(context, 0, num_worlds * sizeof_world_t)
-        self.target_areas = cl.Buffer(context, 0, 2 * size_of_target_area_t)
 
         # initialize random number generator
         self.ranluxcl = cl.Buffer(context, 0, num_worlds * num_robots * 112)
         kernel = self.prg.init_ranluxcl
         kernel.set_scalar_arg_dtypes((np.uint32, None))
         kernel(queue, (num_worlds,num_robots), None, random.randint(0, 4294967295), self.ranluxcl).wait()
-
-        # initialize worlds, robots and target_areas
-        self.prg.init_worlds(queue, (num_worlds,), None, self.ranluxcl, self.worlds).wait()
-        self.prg.init_robots(queue, (num_worlds, num_robots), None, self.ranluxcl, self.worlds).wait()
-
-        kernel = self.prg.init_target_areas
-        kernel.set_scalar_arg_dtypes((None, None, np.float32))
-        kernel(queue, (2,), None, self.ranluxcl, self.target_areas, target_areas_distance).wait()
 
         # initialize neural network
         self.weights = np.random.rand(num_worlds*NUM_ACTUATORS*(NUM_SENSORS+NUM_HIDDEN)).astype(np.float32) * 10 - 5
@@ -113,18 +100,22 @@ class World(object):
             self.ranluxcl, self.worlds, self.weights_buf, self.bias_buf,
             self.weights_hidden_buf, self.bias_hidden_buf, self.timec_hidden_buf).wait()
 
-    def step(self, time_step=1/30.0, dynamics_iterations=4):
-        kernel = self.prg.step_robots
-        kernel.set_scalar_arg_dtypes((None, None, None, np.float32, np.uint32))
-        kernel(self.queue, (self.num_worlds,self.num_robots), None, self.ranluxcl, self.worlds, self.target_areas, time_step, dynamics_iterations).wait()
+    def init_worlds(self, target_areas_distance):
+        init_worlds = self.prg.init_worlds
+        init_worlds.set_scalar_arg_dtypes((None, None, np.float32))
+        init_worlds(self.queue, (self.num_worlds,), None, self.ranluxcl, self.worlds, target_areas_distance).wait()
+        self.prg.init_robots(self.queue, (self.num_worlds, self.num_robots), None, self.ranluxcl, self.worlds).wait()
+
+    def step(self):
+        self.prg.step_robots(self.queue, (self.num_worlds,self.num_robots), None, self.ranluxcl, self.worlds).wait()
 
         self.step_count += 1
-        self.clock += time_step
+        self.clock += self.time_step
 
-    def simulate(self, seconds, time_step=1/30.0, dynamics_iterations=4):
+    def simulate(self, seconds):
         kernel = self.prg.simulate
-        kernel.set_scalar_arg_dtypes((None, None, None, np.float32, np.uint32, np.float32))
-        kernel(self.queue, (self.num_worlds,self.num_robots), None, self.ranluxcl, self.worlds, self.target_areas, time_step, dynamics_iterations, seconds).wait()
+        kernel.set_scalar_arg_dtypes((None, None, np.float32))
+        kernel(self.queue, (self.num_worlds,self.num_robots), None, self.ranluxcl, self.worlds, seconds).wait()
 
     def get_transforms(self):
         transforms = np.zeros(self.num_worlds * self.num_robots, dtype=np.dtype((np.float32, (4,))))

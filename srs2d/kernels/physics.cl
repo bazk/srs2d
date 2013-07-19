@@ -53,6 +53,9 @@ typedef struct {
     int front_led;
     int rear_led;
     int collision_count;
+    float energy;
+    float fitness;
+    int last_target_area;
 
     float sensors[NUM_SENSORS];
     float actuators[NUM_ACTUATORS];
@@ -60,9 +63,16 @@ typedef struct {
 } robot_t;
 
 typedef struct {
+    float2 center;
+    float radius;
+} target_area_t;
+
+typedef struct {
     robot_t robots[ROBOTS_PER_WORLD];
 
-    float fitness;
+    float k;
+
+    target_area_t target_areas[2];
 
     // ANN parameters
     float weights[NUM_ACTUATORS*(NUM_SENSORS+NUM_HIDDEN)];
@@ -73,26 +83,11 @@ typedef struct {
     float timec_hidden[NUM_HIDDEN];
 } world_t;
 
-typedef struct {
-    float2 center;
-    float radius;
-} target_area_t;
-
 // TODO: obstacles
-
-__kernel void size_of_robot_t(__global int *result)
-{
-    *result = (int) sizeof(robot_t);
-}
 
 __kernel void size_of_world_t(__global int *result)
 {
     *result = (int) sizeof(world_t);
-}
-
-__kernel void size_of_target_area_t(__global int *result)
-{
-    *result = (int) sizeof(target_area_t);
 }
 
 float2 rot_mul_vec(rotation_t r, float2 v)
@@ -174,11 +169,22 @@ __kernel void init_ranluxcl(uint seed, __global ranluxcl_state_t *ranluxcltab)
     ranluxcl_initialization(seed, ranluxcltab);
 }
 
-__kernel void init_worlds(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
+__kernel void init_worlds(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds, float targets_distance)
 {
     int wid = get_global_id(0);
 
-    worlds[wid].fitness = 0;
+    // k = number of time steps needed for a robot to consume one unit of energy while moving at maximum speed
+    worlds[wid].k = (targets_distance / (2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS)) / TIME_STEP;
+
+    float x = sqrt(pow((targets_distance / 2.0), 2) / 2.0);
+
+    worlds[wid].target_areas[0].center.x = -x;
+    worlds[wid].target_areas[0].center.y = x;
+    worlds[wid].target_areas[1].center.x = x;
+    worlds[wid].target_areas[1].center.y = -x;
+
+    worlds[wid].target_areas[0].radius = TARGET_AREAS_RADIUS;
+    worlds[wid].target_areas[1].radius = TARGET_AREAS_RADIUS;
 }
 
 __kernel void init_robots(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
@@ -203,6 +209,9 @@ __kernel void init_robots(__global ranluxcl_state_t *ranluxcltab, __global world
     worlds[wid].robots[rid].front_led = 0;
     worlds[wid].robots[rid].rear_led = 0;
     worlds[wid].robots[rid].collision_count = 0;
+    worlds[wid].robots[rid].energy = 2;
+    worlds[wid].robots[rid].fitness = 0.0;
+    worlds[wid].robots[rid].last_target_area = -1;
 
     for (i=0; i<NUM_SENSORS; i++)
         worlds[wid].robots[rid].sensors[i] = 0;
@@ -238,26 +247,6 @@ __kernel void set_ann_parameters(__global ranluxcl_state_t *ranluxcltab, __globa
         worlds[wid].bias_hidden[i] = bias_hidden[i];
         worlds[wid].timec_hidden[i] = timec_hidden[i];
     }
-}
-
-__kernel void init_target_areas(__global ranluxcl_state_t *ranluxcltab, __global target_area_t *target_areas, float targets_distance)
-{
-    int id = get_global_id(0);
-
-    float x = sqrt(pow((targets_distance / 2.0), 2) / 2.0);
-
-    if (id == 0)
-    {
-        target_areas[id].center.x = -x;
-        target_areas[id].center.y = x;
-    }
-    else
-    {
-        target_areas[id].center.x = x;
-        target_areas[id].center.y = -x;
-    }
-
-    target_areas[id].radius = TARGET_AREAS_RADIUS;
 }
 
 void step_controllers(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
@@ -331,7 +320,7 @@ void step_dynamics(__global ranluxcl_state_t *ranluxcltab, __global world_t *wor
     worlds[wid].robots[rid].transform.rot.cos = cos(angle);
 }
 
-void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds, __global target_area_t *target_areas)
+void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
 {
     int wid = get_global_id(0);
     int rid = get_global_id(1);
@@ -428,46 +417,67 @@ void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global world_t *worl
 
     for (i = 0; i < 2; i++)
     {
-        float dist = distance(worlds[wid].robots[rid].transform.pos, target_areas[i].center);
+        float dist = distance(worlds[wid].robots[rid].transform.pos, worlds[wid].target_areas[i].center);
 
-        if (dist < pow(target_areas[i].radius, 2))
+        if (dist < pow(worlds[wid].target_areas[i].radius, 2))
+        {
             worlds[wid].robots[rid].sensors[IN_ground] = 1;
+
+            if (worlds[wid].robots[rid].last_target_area != i)
+            {
+                worlds[wid].robots[rid].fitness += worlds[wid].robots[rid].energy;
+                worlds[wid].robots[rid].energy = 2;
+                worlds[wid].robots[rid].last_target_area = i;
+            }
+            else
+                worlds[wid].robots[rid].energy -= (fabs(worlds[wid].robots[rid].wheels_angular_speed.s0) + fabs(worlds[wid].robots[rid].wheels_angular_speed.s1) /
+                                                                                (2 * worlds[wid].k * WHEELS_MAX_ANGULAR_SPEED));
+        }
         else
+        {
             worlds[wid].robots[rid].sensors[IN_ground] = 0;
+            worlds[wid].robots[rid].energy -= (fabs(worlds[wid].robots[rid].wheels_angular_speed.s0) + fabs(worlds[wid].robots[rid].wheels_angular_speed.s1) /
+                                                                            (2 * worlds[wid].k * WHEELS_MAX_ANGULAR_SPEED));
+        }
     }
 }
 
-__kernel void step_robots(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds, __global target_area_t *target_areas, float time_step, unsigned int dynamics_iterations)
+__kernel void step_robots(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
 {
     unsigned int i;
 
     step_actuators(ranluxcltab, worlds);
 
-    for (i=0; i < dynamics_iterations; i++)
-        step_dynamics(ranluxcltab, worlds, time_step/dynamics_iterations);
+    for (i=0; i < DYNAMICS_ITERATIONS; i++)
+        step_dynamics(ranluxcltab, worlds, TIME_STEP/DYNAMICS_ITERATIONS);
 
-    step_sensors(ranluxcltab, worlds, target_areas);
+    step_sensors(ranluxcltab, worlds);
 
     step_controllers(ranluxcltab, worlds);
 }
 
-__kernel void simulate(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds, __global target_area_t *target_areas, float time_step, unsigned int dynamics_iterations, float seconds)
+__kernel void simulate(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds, float seconds)
 {
-    unsigned int i;
-    float cur = 0;
+    int wid = get_global_id(0);
+    int rid = get_global_id(1);
 
-    while (cur < seconds)
+    unsigned int i, cur = 0, max_steps = ceil(seconds / TIME_STEP);
+
+    while (cur < max_steps)
     {
+        if (cur == floor(max_steps / 2.0))
+            worlds[wid].robots[rid].fitness = 0;
+
         step_actuators(ranluxcltab, worlds);
 
-        for (i=0; i < dynamics_iterations; i++)
-            step_dynamics(ranluxcltab, worlds, time_step/dynamics_iterations);
+        for (i=0; i < DYNAMICS_ITERATIONS; i++)
+            step_dynamics(ranluxcltab, worlds, TIME_STEP/DYNAMICS_ITERATIONS);
 
-        step_sensors(ranluxcltab, worlds, target_areas);
+        step_sensors(ranluxcltab, worlds);
 
         step_controllers(ranluxcltab, worlds);
 
-        cur += time_step;
+        cur += 1;
     }
 }
 
@@ -486,6 +496,12 @@ __kernel void get_transform_matrices(__global world_t *worlds, __global float4 *
 __kernel void get_fitness(__global world_t *worlds, __global float *fitness)
 {
     int wid = get_global_id(0);
+    int rid;
 
-    fitness[wid] = worlds[wid].fitness;
+    float avg_fitness = 0;
+
+    for (rid = 0; rid < ROBOTS_PER_WORLD; rid++)
+        avg_fitness += worlds[wid].robots[rid].fitness;
+
+    fitness[wid] = avg_fitness / ROBOTS_PER_WORLD;
 }

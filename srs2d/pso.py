@@ -49,7 +49,7 @@ class PSO(object):
         self.gbest_fitness = None
         self.particles = []
 
-    def run(self, population_size=8, max_generations=3):
+    def run(self, population_size=42, max_generations=1000):
         print 'PSO Starting...'
         print '==============='
 
@@ -63,17 +63,27 @@ class PSO(object):
 
         while (generation < max_generations):
             print 'Calculating fitness for each particle...'
+
             for p in range(len(self.particles)):
                 pos = self.particles[p].position
                 self.worlds.set_ann_parameters(p, pos.weights, pos.bias, pos.weights_hidden,
                     pos.bias_hidden, pos.timec_hidden)
-
             self.worlds.commit_ann_parameters()
-            self.worlds.simulate(SIMULATION_DURATION)
 
-            fit = self.worlds.get_fitness()
             for p in range(len(self.particles)):
-                self.particles[p].fitness = fit[p]
+                self.particles[p].fitness = 0.0
+
+            for d in D:
+                for i in range(3):
+                    self.worlds.init_worlds(d)
+                    self.worlds.simulate(SIMULATION_DURATION)
+
+                    fit = self.worlds.get_fitness()
+                    for p in range(len(self.particles)):
+                        self.particles[p].fitness += fit[p]
+
+            for p in range(len(self.particles)):
+                self.particles[p].fitness /= len(D) * 3
 
             print 'Updating pbest for each particle...'
             for p in self.particles:
