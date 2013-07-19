@@ -24,6 +24,7 @@ import random
 import logging
 import physics
 import copy
+import time
 import multiprocessing
 import pyopencl as cl
 
@@ -66,162 +67,32 @@ SIMULATION_DURATION = 600
 NUM_ROBOTS = 30
 D = [1.2, 1.5, 1.9, 2.3, 2.7]
 
-
-class Simulation(object):
-    def __init__(self, targets_distance=1.2):
-        global NUM_ROBOTS
-
-        context = cl.create_some_context()
-        queue = cl.CommandQueue(context)
-
-        self.world = physics.World(context, queue, num_robots=NUM_ROBOTS)
-
-        # self.targets_distance = targets_distance
-
-        # H = 4.20
-        # W = random.uniform(4.20, 4.90)
-
-        # x = math.sqrt(((targets_distance / 2.0) ** 2) / 2.0)
-        # self.world.add(robot.ColorPadActuator(center=physics.Vector(-x, x), radius=0.27))
-        # self.world.add(robot.ColorPadActuator(center=physics.Vector(x, -x), radius=0.27))
-        # self.full_charge = targets_distance - 2 * 0.27
-
-        # VERTICAL_WALL_VERTICES = [ physics.Vector(-0.01, H/2.0),
-        #                            physics.Vector(0.01, H/2.0),
-        #                            physics.Vector(0.01, -H/2.0),
-        #                            physics.Vector(-0.01, -H/2.0) ]
-
-        # HORIZONTAL_WALL_VERTICES = [ physics.Vector(-W/2.0-0.01, 0.01),
-        #                              physics.Vector(W/2.0+0.01, 0.01),
-        #                              physics.Vector(W/2.0+0.01, -0.01),
-        #                              physics.Vector(-W/2.0-0.01, -0.01) ]
-
-        # wall = physics.StaticBody(position=physics.Vector(-W/2.0, 0))
-        # wall.add_shape(physics.PolygonShape(vertices=VERTICAL_WALL_VERTICES))
-        # self.world.add(wall)
-
-        # wall = physics.StaticBody(position=physics.Vector(0.0, -H/2.0))
-        # wall.add_shape(physics.PolygonShape(vertices=HORIZONTAL_WALL_VERTICES))
-        # self.world.add(wall)
-
-        # wall = physics.StaticBody(position=physics.Vector(W/2.0, 0))
-        # wall.add_shape(physics.PolygonShape(vertices=VERTICAL_WALL_VERTICES))
-        # self.world.add(wall)
-
-        # wall = physics.StaticBody(position=physics.Vector(0.0, H/2.0))
-        # wall.add_shape(physics.PolygonShape(vertices=HORIZONTAL_WALL_VERTICES))
-        # self.world.add(wall)
-
-        # self.robots = [robot.Robot(position=physics.Vector( random.uniform(-W/2.0+0.12,W/2.0-0.12), random.uniform(-H/2.0+0.12, H/2.0-0.12) )) for i in range(NUM_ROBOTS)]
-        # for rob in self.robots:
-        #     rob.entered_new_target_area = False
-        #     rob.last_color_pad = None
-        #     rob.energy = 1.0 + self.full_charge
-        #     rob.fitness = 0.0
-        #     self.world.add(rob)
-
-        # self.world.connect('color-pad-notify', self.on_color_pad_notify)
-        # self.world.connect('prepare', self.on_prepare)
-        # self.world.connect('think', self.on_think)
-
-    def run(self, seconds):
-        start = cur = self.world.clock
-        while (cur - start) < seconds:
-            self.world.step(0.1)
-            cur = self.world.clock
-
-    # def on_color_pad_notify(self, pad):
-    #     global SIMULATION_DURATION
-
-    #     if self.world.clock < (SIMULATION_DURATION / 2):
-    #         return
-
-    #     for rob in self.robots:
-    #         x = rob.world_center.x
-    #         y = rob.world_center.y
-
-    #         if ((pad.center.x - x) ** 2 + (pad.center.y - y) ** 2) < (pad.radius ** 2):
-    #             if rob.last_color_pad != pad:
-    #                 rob.entered_new_target_area = True
-    #                 rob.last_color_pad = pad
-
-    # def on_prepare(self):
-    #     global SIMULATION_DURATION
-
-    #     if self.world.clock < (SIMULATION_DURATION / 2):
-    #         return
-
-    #     for rob in self.robots:
-    #         rob.entered_new_target_area = False
-
-    # def on_think(self):
-    #     global SIMULATION_DURATION
-
-    #     if self.world.clock < (SIMULATION_DURATION / 2):
-    #         return
-
-    #     for rob in self.robots:
-    #         if rob.entered_new_target_area:
-    #             rob.fitness += rob.energy
-    #             rob.energy = 1 + self.full_charge
-    #         else:
-    #             rob.energy -= (abs(rob.wheels.values[0]) + abs(rob.wheels.values[0])) / (2.0 * 82)
-
-class Worker(multiprocessing.Process):
-    def __init__(self, socket):
-        super(Worker, self).__init__()
-        self.socket = socket
-        self.start()
-
-    def run(self):
-        global SIMULATION_DURATION, D, NUM_ROBOTS
-
-        while True:
-            position = self.socket.recv()
-
-            fit = 0.0
-
-            for d in D:
-                for i in range(3):
-                    sim = Simulation(d)
-
-                    # for rob in sim.robots:
-                    #     rob.controller.load(position)
-
-                    sim.run(SIMULATION_DURATION)
-
-                    # for rob in sim.robots:
-                    #     # A robot takes 2.733333 seconds to move one meter at full speed, so
-                    #     # ((SIMULATION_DURATION / 2.733333) / d) = maximum number of trips a
-                    #     # robot can do in SIMULATION_DURATION seconds.
-                    #     # print rob.fitness
-                    #     fit += rob.fitness / ((SIMULATION_DURATION / 2.733333) / d)
-
-            # self.socket.send(fit / (len(D) * 3 * NUM_ROBOTS))
-            self.socket.send(random.uniform(0,1))
-
 class PSO(object):
     def __init__(self):
         self.gbest = None
         self.gbest_fitness = None
         self.particles = []
 
-    def run(self, population_size=8, num_workers=8):
+    def run(self, population_size=8):
         print 'PSO Starting...'
         print '==============='
 
+        context = cl.create_some_context(interactive=False)
+        queue = cl.CommandQueue(context)
+
         self.particles = [ Particle() for i in range(population_size) ]
-        for p in self.particles:
-            socketA, socketB = multiprocessing.Pipe()
-            p.socket = socketA
-            w = Worker(socketB)
+        self.worlds = physics.World(context, queue, num_worlds=population_size, num_robots=NUM_ROBOTS)
 
         while True:
             print 'Calculating fitness for each particle...'
+            # for p in self.particles:
+            #     p.socket.send(p.position.export())
+
+            self.worlds.simulate(SIMULATION_DURATION)
+            time.sleep(1) # just so the computer dont freeze
+
             for p in self.particles:
-                p.socket.send(p.position.export())
-            for p in self.particles:
-                p.fitness = p.socket.recv()
+                p.fitness = random.uniform(0,10)
 
             print 'Updating pbest for each particle...'
             for p in self.particles:
