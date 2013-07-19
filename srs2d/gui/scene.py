@@ -22,16 +22,12 @@ Provides a viewer for the physics module.
 __author__ = "Eduardo L. Buratti <eburatti09@gmail.com>"
 __date__ = "21 Jun 2013"
 
-import os
-import sys
-import time
 import math
-import random
 import logging
-import threading
 import pygame
-import Box2D
 import pyopencl as cl
+import numpy as np
+import gtk
 
 import dropdown
 from .. import physics
@@ -63,7 +59,7 @@ class Scene(object):
             try:
                 self.font = pygame.font.Font('freesansbold.ttf', 15)
             except IOError:
-                log.warn("Unable to load default font or 'freesansbold.ttf', disabling text.")
+                __log__.warn("Unable to load default font or 'freesansbold.ttf', disabling text.")
                 self.write = lambda *args: 0
 
         pygame.display.set_caption('SRS2d Viewer')
@@ -76,13 +72,13 @@ class Scene(object):
         self.dropdown.add_item('Add robot', callback=self.add_robot)
 
         self.zoom = 180
-        self.center = Box2D.b2Vec2(0, 0)
+        self.center = (0, 0)
         self.offset = (-self.resolution[0]/2, -self.resolution[1]/2)
 
         context = cl.create_some_context()
         queue = cl.CommandQueue(context)
 
-        self.world = physics.World(context, queue, num_robots=2)
+        self.world = physics.World(context, queue, num_worlds=1, num_robots=30)
         self.transforms = self.world.get_transforms()
 
     def start(self):
@@ -125,6 +121,12 @@ class Scene(object):
     def on_mouse_move(self, event):
         self.dropdown.on_mouse_move(event)
 
+    def on_mouse_scroll(self, event):
+        if event.direction == gtk.gdk.SCROLL_UP:
+            self.zoom *= 1.1
+        elif event.direction == gtk.gdk.SCROLL_DOWN:
+            self.zoom *= 0.9
+
     def _check_selection(self, event):
         # for obj in self.world.children: # just nodes attached directly in world
         #     if not isinstance(obj, physics.Body):
@@ -158,7 +160,8 @@ class Scene(object):
 
     def draw(self):
         if self.running or self.do_step:
-            self.world.step(1.0 / self.target_fps)
+            for i in range(10):
+                self.world.step()
             self.do_step = False
 
             self.transforms = self.world.get_transforms()
@@ -212,8 +215,8 @@ class Scene(object):
     def _to_screen(self, point):
         """Transform a world point to screen point."""
 
-        x = ((point[0] + self.center.x) * self.zoom) - self.offset[0]
-        y = ((point[1] + self.center.y) * self.zoom) - self.offset[1]
+        x = ((point[0] + self.center[0]) * self.zoom) - self.offset[0]
+        y = ((point[1] + self.center[1]) * self.zoom) - self.offset[1]
         y = self.resolution[1] - y
 
         return (int(x), int(y))
@@ -223,8 +226,8 @@ class Scene(object):
 
         (x, y) = point
         y = self.resolution[1] - y
-        x = (float(x + self.offset[0]) / self.zoom) - self.center.x
-        y = (float(y + self.offset[1]) / self.zoom) - self.center.y
+        x = (float(x + self.offset[0]) / self.zoom) - self.center[0]
+        y = (float(y + self.offset[1]) / self.zoom) - self.center[1]
 
         return (x, y)
 
@@ -336,24 +339,6 @@ class Scene(object):
             if orientation:
                 pygame.draw.line(self.surface, border, center,
                         (center[0] + radius*orientation[1], center[1] - radius*orientation[0]))
-
-    def draw_segment_shape(self, shape, transform, fill=None):
-        v1 = self._to_screen(Box2D.b2Mul(transform, shape.vertex1))
-        v2 = self._to_screen(Box2D.b2Mul(transform, shape.vertex2))
-
-        self.draw_segment(v1, v2, fill=fill)
-
-    def draw_polygon_shape(self, shape, transform, fill=None, border=None):
-        vertices = [ self._to_screen(Box2D.b2Mul(transform, v)) for v in shape.vertices ]
-
-        self.draw_polygon(vertices, fill=fill, border=border)
-
-    def draw_circle_shape(self, shape, transform, fill=None, border=None):
-        center = self._to_screen(Box2D.b2Mul(transform, shape.pos))
-        radius = shape.radius * self.zoom
-        orientation = transform.R.col2
-
-        self.draw_circle(center, radius, orientation=orientation, fill=fill, border=border)
 
     def write(self, text, color):
         self.surface.blit(self.font.render(text, True, color), (5, self.__write_pos))

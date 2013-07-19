@@ -81,10 +81,11 @@ class Main(gtk.Window):
         vbox.pack_start(hbox, expand=True, fill=True)
 
         area_event_box = gtk.EventBox()
-        area_event_box.add_events(gtk.gdk.MOTION_NOTIFY | gtk.gdk.BUTTON_PRESS)
+        area_event_box.add_events(gtk.gdk.MOTION_NOTIFY | gtk.gdk.BUTTON_PRESS | gtk.gdk.SCROLL_MASK)
         area_event_box.connect('button-press-event', self.on_mouse_down)
         area_event_box.connect('button-release-event', self.on_mouse_up)
         area_event_box.connect('motion-notify-event', self.on_mouse_move)
+        area_event_box.connect("scroll-event", self.on_mouse_scroll)
         area = gtk.DrawingArea()
         area.set_app_paintable(True)
         area.set_size_request(self.scene_resolution[0], self.scene_resolution[1])
@@ -156,6 +157,10 @@ class Main(gtk.Window):
     def on_mouse_move(self, widget, event):
         if self.scene is not None:
             self.scene.on_mouse_move(event)
+
+    def on_mouse_scroll(self, widget, event):
+        if self.scene is not None:
+            self.scene.on_mouse_scroll(event)
 
 class ObjectAttributesTreeView():
     def __init__(self):
