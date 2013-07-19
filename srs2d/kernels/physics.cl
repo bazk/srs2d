@@ -10,6 +10,10 @@
 #define LED_PROTUBERANCE            0.01 // from outside border of the robot
 #define TARGET_AREAS_RADIUS         0.27
 
+#define ARENA_HEIGHT    4.20
+#define ARENA_WIDTH_MIN 4.20
+#define ARENA_WIDTH_MAX 4.90
+
 #define NUM_SENSORS    13
 #define NUM_ACTUATORS   4
 #define NUM_HIDDEN      3
@@ -71,6 +75,9 @@ typedef struct {
     robot_t robots[ROBOTS_PER_WORLD];
 
     float k;
+
+    float arena_height;
+    float arena_width;
 
     target_area_t target_areas[2];
 
@@ -173,8 +180,16 @@ __kernel void init_worlds(__global ranluxcl_state_t *ranluxcltab, __global world
 {
     int wid = get_global_id(0);
 
+    ranluxcl_state_t ranluxclstate;
+    ranluxcl_download_seed(&ranluxclstate, ranluxcltab);
+    float4 random = ranluxcl32(&ranluxclstate);
+    ranluxcl_upload_seed(&ranluxclstate, ranluxcltab);
+
     // k = number of time steps needed for a robot to consume one unit of energy while moving at maximum speed
     worlds[wid].k = (targets_distance / (2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS)) / TIME_STEP;
+
+    worlds[wid].arena_height = ARENA_HEIGHT;
+    worlds[wid].arena_width = ARENA_WIDTH_MIN + random.s0 * (ARENA_WIDTH_MAX - ARENA_WIDTH_MIN);
 
     float x = sqrt(pow((targets_distance / 2.0), 2) / 2.0);
 
@@ -326,6 +341,23 @@ void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global world_t *worl
     int rid = get_global_id(1);
 
     unsigned int i, otherid;
+
+    if ( ((worlds[wid].robots[rid].transform.pos.x+ROBOT_BODY_RADIUS) > (worlds[wid].arena_width/2)) ||
+         ((worlds[wid].robots[rid].transform.pos.x-ROBOT_BODY_RADIUS) < (-worlds[wid].arena_width/2)) ||
+         ((worlds[wid].robots[rid].transform.pos.y+ROBOT_BODY_RADIUS) > (worlds[wid].arena_height/2)) ||
+         ((worlds[wid].robots[rid].transform.pos.y-ROBOT_BODY_RADIUS) < (-worlds[wid].arena_height/2)) )
+    {
+        // random_position
+        ranluxcl_state_t ranluxclstate;
+        ranluxcl_download_seed(&ranluxclstate, ranluxcltab);
+        float4 random = ranluxcl32(&ranluxclstate);
+        ranluxcl_upload_seed(&ranluxclstate, ranluxcltab);
+
+        worlds[wid].robots[rid].transform.pos.x = random.s0 * 4 - 2;
+        worlds[wid].robots[rid].transform.pos.y = random.s1 * 4 - 2;
+        worlds[wid].robots[rid].transform.rot.sin = random.s2 * 2 - 1;
+        worlds[wid].robots[rid].transform.rot.cos = random.s3 * 2 - 1;
+    }
 
     for (i = 0; i < NUM_SENSORS; i++)
         worlds[wid].robots[rid].sensors[i] = 0.0;
