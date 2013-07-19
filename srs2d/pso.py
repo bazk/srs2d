@@ -73,7 +73,7 @@ class PSO(object):
         self.gbest_fitness = None
         self.particles = []
 
-    def run(self, population_size=8):
+    def run(self, population_size=8, max_generations=10):
         print 'PSO Starting...'
         print '==============='
 
@@ -83,13 +83,14 @@ class PSO(object):
         self.particles = [ Particle() for i in range(population_size) ]
         self.worlds = physics.World(context, queue, num_worlds=population_size, num_robots=NUM_ROBOTS)
 
-        while True:
+        generation = 0
+
+        while (generation < max_generations):
             print 'Calculating fitness for each particle...'
             # for p in self.particles:
             #     p.socket.send(p.position.export())
 
             self.worlds.simulate(SIMULATION_DURATION)
-            time.sleep(1) # just so the computer dont freeze
 
             for p in self.particles:
                 p.fitness = random.uniform(0,10)
@@ -114,6 +115,8 @@ class PSO(object):
             for p in self.particles:
                 p.gbest = self.gbest
                 p.update_pos_vel()
+
+            generation += 1
 
 class Particle(object):
     def __init__(self):
