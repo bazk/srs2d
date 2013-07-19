@@ -68,11 +68,11 @@ class World(object):
         sizeof = np.zeros(1, dtype=np.int32)
         sizeof_buf = cl.Buffer(context, 0, 4)
 
-        self.prg.size_of_robot_t(queue, (1,), None, sizeof_buf)
+        self.prg.size_of_robot_t(queue, (1,), None, sizeof_buf).wait()
         cl.enqueue_copy(queue, sizeof, sizeof_buf)
         sizeof_robot_t = int(sizeof[0])
 
-        self.prg.size_of_target_area_t(queue, (1,), None, sizeof_buf)
+        self.prg.size_of_target_area_t(queue, (1,), None, sizeof_buf).wait()
         cl.enqueue_copy(queue, sizeof, sizeof_buf)
         size_of_target_area_t = int(sizeof[0])
 
@@ -84,14 +84,14 @@ class World(object):
         self.ranluxcl = cl.Buffer(context, 0, num_robots * 112)
         kernel = self.prg.init_ranluxcl
         kernel.set_scalar_arg_dtypes((np.uint32, None))
-        kernel(queue, (num_robots,), None, random.randint(0, 4294967295), self.ranluxcl)
+        kernel(queue, (num_robots,), None, random.randint(0, 4294967295), self.ranluxcl).wait()
 
         # initialize robots and target_areas
-        self.prg.init_robots(queue, (num_worlds, num_robots), None, self.ranluxcl, self.robots)
+        self.prg.init_robots(queue, (num_worlds, num_robots), None, self.ranluxcl, self.robots).wait()
 
         kernel = self.prg.init_target_areas
         kernel.set_scalar_arg_dtypes((None, None, np.float32))
-        kernel(queue, (2,), None, self.ranluxcl, self.target_areas, target_areas_distance)
+        kernel(queue, (2,), None, self.ranluxcl, self.target_areas, target_areas_distance).wait()
 
         # initialize neural network
         self.weights = np.random.rand(NUM_ACTUATORS*(NUM_SENSORS+NUM_HIDDEN)).astype(np.float32) * 10 - 5
@@ -111,12 +111,12 @@ class World(object):
 
         self.prg.set_robots_ann(queue, (num_worlds, num_robots), None,
             self.ranluxcl, self.robots, self.weights_buf, self.bias_buf,
-            self.weights_hidden_buf, self.bias_hidden_buf, self.timec_hidden_buf, self.H_buf)
+            self.weights_hidden_buf, self.bias_hidden_buf, self.timec_hidden_buf, self.H_buf).wait()
 
     def step(self, time_step=1/30.0, dynamics_iterations=4):
         kernel = self.prg.step_robots
         kernel.set_scalar_arg_dtypes((None, None, None, np.float32, np.uint32))
-        kernel(self.queue, (self.num_worlds,self.num_robots), None, self.ranluxcl, self.robots, self.target_areas, time_step, dynamics_iterations)
+        kernel(self.queue, (self.num_worlds,self.num_robots), None, self.ranluxcl, self.robots, self.target_areas, time_step, dynamics_iterations).wait()
 
         self.step_count += 1
         self.clock += time_step
@@ -124,11 +124,11 @@ class World(object):
     def simulate(self, seconds, time_step=1/30.0, dynamics_iterations=4):
         kernel = self.prg.simulate
         kernel.set_scalar_arg_dtypes((None, None, None, np.float32, np.uint32, np.float32))
-        kernel(self.queue, (self.num_worlds,self.num_robots), None, self.ranluxcl, self.robots, self.target_areas, time_step, dynamics_iterations, seconds)
+        kernel(self.queue, (self.num_worlds,self.num_robots), None, self.ranluxcl, self.robots, self.target_areas, time_step, dynamics_iterations, seconds).wait()
 
     def get_transforms(self):
         transforms = np.zeros(self.num_worlds * self.num_robots, dtype=np.dtype((np.float32, (4,))))
         trans_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=transforms)
-        self.prg.get_transform_matrices(self.queue, (self.num_worlds, self.num_robots), None, self.robots, trans_buf)
+        self.prg.get_transform_matrices(self.queue, (self.num_worlds, self.num_robots), None, self.robots, trans_buf).wait()
         cl.enqueue_copy(self.queue, transforms, trans_buf)
         return transforms
