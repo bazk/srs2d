@@ -27,37 +27,13 @@ import copy
 import time
 import multiprocessing
 import pyopencl as cl
+import numpy as np
 
 __log__ = logging.getLogger(__name__)
 
-INPUT_NEURONS = [
-    'camera0',
-    'camera1',
-    'camera2',
-    'camera3',
-    'proximity3',
-    'proximity2',
-    'proximity1',
-    'proximity0',
-    'proximity7',
-    'proximity6',
-    'proximity5',
-    'proximity4',
-    'ground0'
-]
-
-HIDDEN_NEURONS = [
-    'hidden0',
-    'hidden1',
-    'hidden2'
-]
-
-OUTPUT_NEURONS = [
-    'wheels1',
-    'wheels0',
-    'rear_led0',
-    'front_led0'
-]
+NUM_SENSORS     = 13
+NUM_ACTUATORS   = 4
+NUM_HIDDEN      = 3
 
 W = 0.9
 ALFA = 2
@@ -73,7 +49,7 @@ class PSO(object):
         self.gbest_fitness = None
         self.particles = []
 
-    def run(self, population_size=8, max_generations=10):
+    def run(self, population_size=8, max_generations=3):
         print 'PSO Starting...'
         print '==============='
 
@@ -87,13 +63,17 @@ class PSO(object):
 
         while (generation < max_generations):
             print 'Calculating fitness for each particle...'
-            # for p in self.particles:
-            #     p.socket.send(p.position.export())
+            for p in range(len(self.particles)):
+                pos = self.particles[p].position
+                self.worlds.set_ann_parameters(p, pos.weights, pos.bias, pos.weights_hidden,
+                    pos.bias_hidden, pos.timec_hidden)
 
+            self.worlds.commit_ann_parameters()
             self.worlds.simulate(SIMULATION_DURATION)
 
-            for p in self.particles:
-                p.fitness = random.uniform(0,10)
+            fit = self.worlds.get_fitness()
+            for p in range(len(self.particles)):
+                self.particles[p].fitness = fit[p]
 
             print 'Updating pbest for each particle...'
             for p in self.particles:
@@ -158,33 +138,31 @@ class Particle(object):
 
 class PVector(object):
     def __init__(self, randomize=False, weights_boundary=(-5.0, 5.0), bias_boundary=(-5.0, 5.0), timec_boundary=(0, 1.0)):
-        global INPUT_NEURONS, HIDDEN_NEURONS, OUTPUT_NEURONS
-
         self.weights_boundary = weights_boundary
         self.bias_boundary = bias_boundary
         self.timec_boundary = timec_boundary
 
         if randomize:
-            self.weights = { o: { ih: random.uniform(weights_boundary[0], weights_boundary[1]) for ih in INPUT_NEURONS + HIDDEN_NEURONS } for o in OUTPUT_NEURONS }
-            self.bias = { o: random.uniform(bias_boundary[0], bias_boundary[1]) for o in OUTPUT_NEURONS }
-            self.weights_hidden = { h: { i: random.uniform(weights_boundary[0], weights_boundary[1]) for i in INPUT_NEURONS } for h in HIDDEN_NEURONS }
-            self.bias_hidden = { h: random.uniform(bias_boundary[0], bias_boundary[1]) for h in HIDDEN_NEURONS }
-            self.timec_hidden = { h: random.uniform(timec_boundary[0], timec_boundary[1]) for h in HIDDEN_NEURONS }
+            self.weights = np.random.uniform(weights_boundary[0], weights_boundary[1], NUM_ACTUATORS * (NUM_SENSORS + NUM_HIDDEN))
+            self.bias = np.random.uniform(bias_boundary[0], bias_boundary[1], NUM_ACTUATORS)
+            self.weights_hidden = np.random.uniform(weights_boundary[0], weights_boundary[1], NUM_HIDDEN * NUM_SENSORS)
+            self.bias_hidden = np.random.uniform(bias_boundary[0], bias_boundary[1], NUM_HIDDEN)
+            self.timec_hidden = np.random.uniform(timec_boundary[0], timec_boundary[1], NUM_HIDDEN)
 
         else:
-            self.weights = { o: { ih: 0.0 for ih in INPUT_NEURONS + HIDDEN_NEURONS } for o in OUTPUT_NEURONS }
-            self.bias = { o: 0.0 for o in OUTPUT_NEURONS }
-            self.weights_hidden = { h: { i: 0.0 for i in INPUT_NEURONS } for h in HIDDEN_NEURONS }
-            self.bias_hidden = { h: 0.0 for h in HIDDEN_NEURONS }
-            self.timec_hidden = { h: 0.0 for h in HIDDEN_NEURONS }
+            self.weights = np.zeros(NUM_ACTUATORS * (NUM_SENSORS + NUM_HIDDEN), dtype=np.float32)
+            self.bias = np.zeros(NUM_ACTUATORS, dtype=np.float32)
+            self.weights_hidden = np.zeros(NUM_HIDDEN * NUM_SENSORS, dtype=np.float32)
+            self.bias_hidden = np.zeros(NUM_HIDDEN, dtype=np.float32)
+            self.timec_hidden = np.zeros(NUM_HIDDEN, dtype=np.float32)
 
     def __str__(self):
         return str({
-            'weights': self.weights,
-            'bias': self.bias,
-            'weights_hidden': self.weights_hidden,
-            'bias_hidden': self.bias_hidden,
-            'timec_hidden': self.timec_hidden
+            'weights': [ x for x in self.weights.flat ],
+            'bias': [ x for x in self.bias.flat ],
+            'weights_hidden': [ x for x in self.weights_hidden.flat ],
+            'bias_hidden': [ x for x in self.bias_hidden.flat ],
+            'timec_hidden': [ x for x in self.timec_hidden.flat ]
         })
 
     def copy(self):
@@ -192,11 +170,11 @@ class PVector(object):
         pv.weights_boundary = copy.deepcopy(self.weights_boundary)
         pv.bias_boundary = copy.deepcopy(self.bias_boundary)
         pv.timec_boundary = copy.deepcopy(self.timec_boundary)
-        pv.weights = copy.deepcopy(self.weights)
-        pv.bias = copy.deepcopy(self.bias)
-        pv.weights_hidden = copy.deepcopy(self.weights_hidden)
-        pv.bias_hidden = copy.deepcopy(self.bias_hidden)
-        pv.timec_hidden = copy.deepcopy(self.timec_hidden)
+        pv.weights = np.copy(self.weights)
+        pv.bias = np.copy(self.bias)
+        pv.weights_hidden = np.copy(self.weights_hidden)
+        pv.bias_hidden = np.copy(self.bias_hidden)
+        pv.timec_hidden = np.copy(self.timec_hidden)
         return pv
 
     def __add__(self, other):
@@ -205,11 +183,18 @@ class PVector(object):
             ret.weights_boundary = self.weights_boundary
             ret.bias_boundary = self.bias_boundary
             ret.timec_boundary = self.timec_boundary
-            ret.weights = { o: { ih: self.check_boundary(self.weights_boundary, self.weights[o][ih]+other.weights[o][ih]) for ih in INPUT_NEURONS + HIDDEN_NEURONS } for o in OUTPUT_NEURONS }
-            ret.bias = { o: self.check_boundary(self.bias_boundary, self.bias[o]+other.bias[o]) for o in OUTPUT_NEURONS }
-            ret.weights_hidden = { h: { i: self.check_boundary(self.weights_boundary, self.weights_hidden[h][i]+other.weights_hidden[h][i]) for i in INPUT_NEURONS } for h in HIDDEN_NEURONS }
-            ret.bias_hidden = { h: self.check_boundary(self.bias_boundary, self.bias_hidden[h]+other.bias_hidden[h]) for h in HIDDEN_NEURONS }
-            ret.timec_hidden = { h: self.check_boundary(self.timec_boundary, self.timec_hidden[h]+other.timec_hidden[h]) for h in HIDDEN_NEURONS }
+
+            ret.weights = self.weights + other.weights
+            ret.bias = self.bias + other.bias
+            ret.weights_hidden = self.weights_hidden + other.weights_hidden
+            ret.bias_hidden = self.bias_hidden + other.bias_hidden
+            ret.timec_hidden = self.timec_hidden + other.timec_hidden
+
+            self.check_boundary(self.weights_boundary, ret.weights)
+            self.check_boundary(self.bias_boundary, ret.bias)
+            self.check_boundary(self.weights_boundary, ret.weights_hidden)
+            self.check_boundary(self.bias_boundary, ret.bias_hidden)
+            self.check_boundary(self.timec_boundary, ret.timec_hidden)
             return ret
         else:
             raise NotImplemented
@@ -220,11 +205,18 @@ class PVector(object):
             ret.weights_boundary = self.weights_boundary
             ret.bias_boundary = self.bias_boundary
             ret.timec_boundary = self.timec_boundary
-            ret.weights = { o: { ih: self.check_boundary(self.weights_boundary, self.weights[o][ih]-other.weights[o][ih]) for ih in INPUT_NEURONS + HIDDEN_NEURONS } for o in OUTPUT_NEURONS }
-            ret.bias = { o: self.check_boundary(self.bias_boundary, self.bias[o]-other.bias[o]) for o in OUTPUT_NEURONS }
-            ret.weights_hidden = { h: { i: self.check_boundary(self.weights_boundary, self.weights_hidden[h][i]-other.weights_hidden[h][i]) for i in INPUT_NEURONS } for h in HIDDEN_NEURONS }
-            ret.bias_hidden = { h: self.check_boundary(self.bias_boundary, self.bias_hidden[h]-other.bias_hidden[h]) for h in HIDDEN_NEURONS }
-            ret.timec_hidden = { h: self.check_boundary(self.timec_boundary, self.timec_hidden[h]-other.timec_hidden[h]) for h in HIDDEN_NEURONS }
+
+            ret.weights = self.weights - other.weights
+            ret.bias = self.bias - other.bias
+            ret.weights_hidden = self.weights_hidden - other.weights_hidden
+            ret.bias_hidden = self.bias_hidden - other.bias_hidden
+            ret.timec_hidden = self.timec_hidden - other.timec_hidden
+
+            self.check_boundary(self.weights_boundary, ret.weights)
+            self.check_boundary(self.bias_boundary, ret.bias)
+            self.check_boundary(self.weights_boundary, ret.weights_hidden)
+            self.check_boundary(self.bias_boundary, ret.bias_hidden)
+            self.check_boundary(self.timec_boundary, ret.timec_hidden)
             return ret
         else:
             raise NotImplemented
@@ -235,11 +227,18 @@ class PVector(object):
             ret.weights_boundary = self.weights_boundary
             ret.bias_boundary = self.bias_boundary
             ret.timec_boundary = self.timec_boundary
-            ret.weights = { o: { ih: self.check_boundary(self.weights_boundary, self.weights[o][ih]*other) for ih in INPUT_NEURONS + HIDDEN_NEURONS } for o in OUTPUT_NEURONS }
-            ret.bias = { o: self.check_boundary(self.bias_boundary, self.bias[o]*other) for o in OUTPUT_NEURONS }
-            ret.weights_hidden = { h: { i: self.check_boundary(self.weights_boundary, self.weights_hidden[h][i]*other) for i in INPUT_NEURONS } for h in HIDDEN_NEURONS }
-            ret.bias_hidden = { h: self.check_boundary(self.bias_boundary, self.bias_hidden[h]*other) for h in HIDDEN_NEURONS }
-            ret.timec_hidden = { h: self.check_boundary(self.timec_boundary, self.timec_hidden[h]*other) for h in HIDDEN_NEURONS }
+
+            ret.weights = self.weights * other
+            ret.bias = self.bias * other
+            ret.weights_hidden = self.weights_hidden * other
+            ret.bias_hidden = self.bias_hidden * other
+            ret.timec_hidden = self.timec_hidden * other
+
+            self.check_boundary(self.weights_boundary, ret.weights)
+            self.check_boundary(self.bias_boundary, ret.bias)
+            self.check_boundary(self.weights_boundary, ret.weights_hidden)
+            self.check_boundary(self.bias_boundary, ret.bias_hidden)
+            self.check_boundary(self.timec_boundary, ret.timec_hidden)
             return ret
         else:
             raise NotImplemented
@@ -251,13 +250,12 @@ class PVector(object):
             raise NotImplemented
 
     @staticmethod
-    def check_boundary(boundary, value):
-        if value < boundary[0]:
-            return boundary[0]
-        elif value > boundary[1]:
-            return boundary[1]
-        else:
-            return value
+    def check_boundary(boundary, array):
+        for i in range(array.size):
+            if array[i] < boundary[0]:
+                array[i] = boundary[0]
+            elif array[i] > boundary[1]:
+                array[i] = boundary[1]
 
     def export(self):
         return {
