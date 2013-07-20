@@ -78,8 +78,9 @@ class Scene(object):
         context = cl.create_some_context()
         queue = cl.CommandQueue(context)
 
-        self.world = physics.World(context, queue, num_worlds=1, num_robots=30)
-        self.transforms = self.world.get_transforms()
+        self.simulator = physics.Simulator(context, queue, num_worlds=1, num_robots=30)
+        self.simulator.init_worlds(1.2)
+        self.transforms = self.simulator.get_transforms()
 
     def start(self):
         self.running = True
@@ -160,11 +161,11 @@ class Scene(object):
 
     def draw(self):
         if self.running or self.do_step:
-            for i in range(10):
-                self.world.step()
+            for i in range(128):
+                self.simulator.step()
             self.do_step = False
 
-            self.transforms = self.world.get_transforms()
+            self.transforms = self.simulator.get_transforms()
 
         self.screen.fill(self.background)
         self.surface.fill(self.background)
@@ -201,7 +202,7 @@ class Scene(object):
 
         self.dropdown.draw(self.surface)
 
-        real_clock = self.world.clock
+        real_clock = self.simulator.clock
 
         self.write(str(self.clock.get_fps()), (200,80,80))
         self.write("%02d:%02d:%02d" % (int(real_clock) / 3600,
