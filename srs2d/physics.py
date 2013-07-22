@@ -21,6 +21,7 @@ __date__ = "13 Jul 2013"
 import os
 import logging
 import random
+import copy
 import numpy as np
 import pyopencl as cl
 
@@ -264,3 +265,13 @@ class ANNParametersArray(object):
             'bias_hidden': self.bias_hidden,
             'timec_hidden': self.timec_hidden
         }
+
+    @staticmethod
+    def load(data):
+        self = ANNParametersArray()
+        self.weights = np.array(data['weights'])
+        self.bias = np.array(data['bias'])
+        self.weights_hidden = np.array(data['weights_hidden'])
+        self.bias_hidden = np.array(data['bias_hidden'])
+        self.timec_hidden = np.array(data['timec_hidden'])
+        return self
