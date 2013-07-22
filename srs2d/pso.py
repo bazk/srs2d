@@ -18,16 +18,14 @@
 __author__ = "Eduardo L. Buratti <eburatti09@gmail.com>"
 __date__ = "04 Jul 2013"
 
-import sys
-import math
 import random
 import logging
 import physics
-import copy
-import time
-import multiprocessing
 import pyopencl as cl
-import numpy as np
+import logging.config
+import logconfig
+
+logging.config.dictConfig(logconfig.LOGGING)
 
 __log__ = logging.getLogger(__name__)
 
@@ -36,8 +34,8 @@ NUM_ACTUATORS   = 4
 NUM_HIDDEN      = 3
 
 W = 0.9
-ALFA = 2
-BETA = 2
+ALFA = 2.0
+BETA = 2.0
 
 SIMULATION_DURATION = 600
 NUM_ROBOTS = 30
@@ -49,12 +47,20 @@ class PSO(object):
         self.gbest_fitness = None
         self.particles = []
 
-    def run(self, population_size=42, max_generations=1000):
-        print 'PSO Starting...'
-        print '==============='
-
+    def run(self, population_size=42, max_generations=2000):
         context = cl.create_some_context()
         queue = cl.CommandQueue(context)
+
+        __log__.info(' PSO Starting...')
+        __log__.info('=' * 80)
+        __log__.info(' population_size = %d', population_size)
+        __log__.info(' max_generations = %d', max_generations)
+        __log__.info(' NUM_ROBOTS = %d', NUM_ROBOTS)
+        __log__.info(' SIMULATION_DURATION = %d', SIMULATION_DURATION)
+        __log__.info(' W = %f', W)
+        __log__.info(' ALFA = %f', ALFA)
+        __log__.info(' BETA = %f', BETA)
+        __log__.info('=' * 80)
 
         self.particles = [ Particle() for i in range(population_size) ]
         self.simulator = physics.Simulator(context, queue, num_worlds=population_size, num_robots=NUM_ROBOTS)
@@ -62,7 +68,7 @@ class PSO(object):
         generation = 0
 
         while (generation < max_generations):
-            print 'Calculating fitness for each particle...'
+            __log__.info('Calculating fitness for each particle...')
 
             for p in range(len(self.particles)):
                 pos = self.particles[p].position
@@ -84,23 +90,20 @@ class PSO(object):
             for p in range(len(self.particles)):
                 self.particles[p].fitness /= len(D) * 3
 
-            print 'Updating pbest for each particle...'
             for p in self.particles:
                 p.update_pbest()
 
-            print 'Updating gbest...'
             for p in self.particles:
                 if (self.gbest is None) or (p.pbest.fitness > self.gbest.fitness):
                     self.gbest = p.pbest.copy()
 
-                    print 'Found new gbest: ', str(self.gbest)
+                    __log__.info('Found new gbest: %s', str(self.gbest))
 
-            print '-' * 80
-            print 'CURRENT GBEST IS: ', str(self.gbest)
-            print str(self.gbest.position)
-            print '-' * 80
+            __log__.info('-' * 80)
+            __log__.info('[gen=%d] CURRENT GBEST IS: %s', generation, str(self.gbest))
+            __log__.info(str(self.gbest.position))
+            __log__.info('-' * 80)
 
-            print 'Calculating new position and velocity for each particle...'
             for p in self.particles:
                 p.gbest = self.gbest
                 p.update_pos_vel()
@@ -134,7 +137,7 @@ class Particle(object):
         if (self.pbest is None) or (self.fitness > self.pbest.fitness):
             self.pbest = self.copy()
 
-            print '[Particle %d] Found new pbest: %s' % (self.id, str(self.pbest))
+            __log__.info('[Particle %d] Found new pbest: %s', self.id, str(self.pbest))
 
     def update_pos_vel(self):
         global W, ALFA, BETA
