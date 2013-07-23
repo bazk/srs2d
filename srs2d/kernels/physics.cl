@@ -472,7 +472,7 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
     {
         float dist = distance(worlds[wid].robots[rid].transform.pos, worlds[wid].target_areas[i].center);
 
-        if (dist < worlds[wid].target_areas[i].radius, 2)
+        if (dist < worlds[wid].target_areas[i].radius)
         {
             worlds[wid].robots[rid].sensors[IN_ground] = 1;
 
