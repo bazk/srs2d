@@ -264,7 +264,7 @@ __kernel void set_ann_parameters(__global ranluxcl_state_t *ranluxcltab, __globa
     }
 }
 
-void step_controllers(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
+__kernel void step_controllers(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
 {
     int wid = get_global_id(0);
     int rid = get_global_id(1);
@@ -300,7 +300,7 @@ void step_controllers(__global ranluxcl_state_t *ranluxcltab, __global world_t *
     }
 }
 
-void step_actuators(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
+__kernel void step_actuators(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
 {
     int wid = get_global_id(0);
     int rid = get_global_id(1);
@@ -311,7 +311,7 @@ void step_actuators(__global ranluxcl_state_t *ranluxcltab, __global world_t *wo
     worlds[wid].robots[rid].rear_led = (worlds[wid].robots[rid].actuators[OUT_rear_led] > 0.5) ? 1 : 0;
 }
 
-void step_dynamics(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds, float time_step)
+__kernel void step_dynamics(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds, float time_step)
 {
     int wid = get_global_id(0);
     int rid = get_global_id(1);
@@ -335,7 +335,7 @@ void step_dynamics(__global ranluxcl_state_t *ranluxcltab, __global world_t *wor
     worlds[wid].robots[rid].transform.rot.cos = cos(angle);
 }
 
-void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
+__kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
 {
     int wid = get_global_id(0);
     int rid = get_global_id(1);
@@ -540,4 +540,12 @@ __kernel void get_fitness(__global world_t *worlds, __global float *fitness)
         avg_fitness += worlds[wid].robots[rid].fitness;
 
     fitness[wid] = avg_fitness / ROBOTS_PER_WORLD;
+}
+
+__kernel void set_fitness(__global world_t *worlds, float fitness)
+{
+    int wid = get_global_id(0);
+    int rid = get_global_id(1);
+
+    worlds[wid].robots[rid].fitness = fitness;
 }
