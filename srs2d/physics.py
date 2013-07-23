@@ -64,7 +64,7 @@ class Simulator(object):
         self.work_group_size = pyopencl.characterize.get_simd_group_size(self.queue.device, sizeof_world_t)
         self.global_size = (num_worlds, num_robots)
         if self.work_group_size >= num_robots:
-            self.local_size = (num_worlds / self.work_group_size, num_robots)
+            self.local_size = (self.work_group_size / num_robots, num_robots)
             self.need_global_barrier = False
         else:
             self.local_size = (1, self.work_group_size)
