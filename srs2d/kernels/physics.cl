@@ -483,6 +483,8 @@ __kernel void step_robots(__global ranluxcl_state_t *ranluxcltab, __global world
     for (i=0; i < DYNAMICS_ITERATIONS; i++)
         step_dynamics(ranluxcltab, worlds, TIME_STEP/DYNAMICS_ITERATIONS);
 
+    barrier(CLK_GLOBAL_MEM_FENCE);
+
     step_sensors(ranluxcltab, worlds);
 
     step_controllers(ranluxcltab, worlds);
@@ -504,6 +506,8 @@ __kernel void simulate(__global ranluxcl_state_t *ranluxcltab, __global world_t 
 
         for (i=0; i < DYNAMICS_ITERATIONS; i++)
             step_dynamics(ranluxcltab, worlds, TIME_STEP/DYNAMICS_ITERATIONS);
+
+        barrier(CLK_GLOBAL_MEM_FENCE);
 
         step_sensors(ranluxcltab, worlds);
 
