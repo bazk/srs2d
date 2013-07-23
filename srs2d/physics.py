@@ -24,6 +24,7 @@ import random
 import copy
 import numpy as np
 import pyopencl as cl
+import pyopencl.characterize
 
 __log__ = logging.getLogger(__name__)
 
@@ -59,6 +60,18 @@ class Simulator(object):
         cl.enqueue_copy(queue, sizeof, sizeof_buf)
         sizeof_world_t = int(sizeof[0])
 
+        # estimate how many work items can be executed in parallel in each work group
+        self.work_group_size = pyopencl.characterize.get_simd_group_size(self.queue.device, sizeof_world_t)
+        self.global_size = (num_worlds, num_robots)
+        if self.work_group_size >= num_robots:
+            self.local_size = (num_worlds / self.work_group_size, num_robots)
+            self.need_global_barrier = False
+        else:
+            self.local_size = (1, self.work_group_size)
+            self.need_global_barrier = True
+
+        print self.global_size, self.local_size
+
         # create buffers
         self.worlds = cl.Buffer(context, 0, num_worlds * sizeof_world_t)
 
@@ -66,7 +79,7 @@ class Simulator(object):
         self.ranluxcl = cl.Buffer(context, 0, num_worlds * num_robots * 112)
         kernel = self.prg.init_ranluxcl
         kernel.set_scalar_arg_dtypes((np.uint32, None))
-        kernel(queue, (num_worlds,num_robots), None, random.randint(0, 4294967295), self.ranluxcl).wait()
+        kernel(queue, self.global_size, self.local_size, random.randint(0, 4294967295), self.ranluxcl).wait()
 
         # initialize neural network
         self.weights = np.random.rand(num_worlds*NUM_ACTUATORS*(NUM_SENSORS+NUM_HIDDEN)).astype(np.float32) * 10 - 5
@@ -91,23 +104,46 @@ class Simulator(object):
         init_worlds = self.prg.init_worlds
         init_worlds.set_scalar_arg_dtypes((None, None, np.float32))
         init_worlds(self.queue, (self.num_worlds,), None, self.ranluxcl, self.worlds, target_areas_distance).wait()
-        self.prg.init_robots(self.queue, (self.num_worlds, self.num_robots), None, self.ranluxcl, self.worlds).wait()
+        self.prg.init_robots(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
 
     def step(self):
-        self.prg.step_robots(self.queue, (self.num_worlds,self.num_robots), None, self.ranluxcl, self.worlds).wait()
+        self.prg.step_robots(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
 
         self.step_count += 1
         self.clock += self.time_step
 
     def simulate(self, seconds):
-        kernel = self.prg.simulate
-        kernel.set_scalar_arg_dtypes((None, None, np.float32))
-        kernel(self.queue, (self.num_worlds,self.num_robots), None, self.ranluxcl, self.worlds, seconds).wait()
+        if not self.need_global_barrier:
+            kernel = self.prg.simulate
+            kernel.set_scalar_arg_dtypes((None, None, np.float32))
+            kernel(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds, seconds).wait()
+
+        else:
+            max_steps = math.ceil(seconds / self.time_step)
+            cur = 0
+
+            while (cur < max_steps):
+                if (cur == math.floor(max_steps / 2.0)):
+                    kernel = self.prg.set_fitness
+                    kernel.set_scalar_arg_dtypes((None, np.float32))
+                    kernel(self.queue, self.global_size, self.local_size, self.worlds, 0).wait()
+
+                self.prg.step_actuators(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
+
+                for i in range(DYNAMICS_ITERATIONS):
+                    kernel = self.prg.step_dynamics
+                    kernel.set_scalar_arg_dtypes((None, None, np.float32))
+                    kernel(self.queue, self.global_size, self.local_size, ranluxcltab, worlds, TIME_STEP/DYNAMICS_ITERATIONS).wait()
+
+                self.prg.step_sensors(self.queue, self.global_size, self.local_size, ranluxcltab, worlds).wait()
+                self.prg.step_controllers(self.queue, self.global_size, self.local_size, ranluxcltab, worlds).wait()
+
+                cur += 1
 
     def get_transforms(self):
         transforms = np.zeros(self.num_worlds * self.num_robots, dtype=np.dtype((np.float32, (4,))))
         trans_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=transforms)
-        self.prg.get_transform_matrices(self.queue, (self.num_worlds, self.num_robots), None, self.worlds, trans_buf).wait()
+        self.prg.get_transform_matrices(self.queue, self.global_size, self.local_size, self.worlds, trans_buf).wait()
         cl.enqueue_copy(self.queue, transforms, trans_buf)
         return transforms
 
