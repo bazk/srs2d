@@ -171,6 +171,58 @@ float raycast(__global robot_t *robots, float2 p1, float2 p2)
     return min;
 }
 
+__kernel void set_random_position(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
+{
+    int wid = get_global_id(0);
+    int rid = get_global_id(1);
+
+    int otherid, i, collision = 1;
+
+    ranluxcl_state_t ranluxclstate;
+    ranluxcl_download_seed(&ranluxclstate, ranluxcltab);
+
+    while (collision == 1)
+    {
+        float4 random = ranluxcl32(&ranluxclstate);
+
+        worlds[wid].robots[rid].transform.pos.x = random.s0 * 4 - 2;
+        worlds[wid].robots[rid].transform.pos.y = random.s1 * 4 - 2;
+        worlds[wid].robots[rid].transform.rot.sin = random.s2 * 2 - 1;
+        worlds[wid].robots[rid].transform.rot.cos = random.s3 * 2 - 1;
+
+        collision = 0;
+
+        // check for collision with other robots
+        for (otherid = 0; otherid < ROBOTS_PER_WORLD; otherid++)
+        {
+            if (rid != otherid)
+            {
+                float dist = distance(worlds[wid].robots[rid].transform.pos, worlds[wid].robots[otherid].transform.pos);
+
+                if (dist < 2*ROBOT_BODY_RADIUS)
+                {
+                    collision = 1;
+                    break;
+                }
+            }
+        }
+
+        // check for "collision" with target areas
+        for (i = 0; i < 2; i++)
+        {
+            float dist = distance(worlds[wid].robots[rid].transform.pos, worlds[wid].target_areas[i].center);
+
+            if (dist < worlds[wid].target_areas[i].radius)
+            {
+                collision = 1;
+                break;
+            }
+        }
+    }
+
+    ranluxcl_upload_seed(&ranluxclstate, ranluxcltab);
+}
+
 __kernel void init_ranluxcl(uint seed, __global ranluxcl_state_t *ranluxcltab)
 {
     ranluxcl_initialization(seed, ranluxcltab);
@@ -209,16 +261,7 @@ __kernel void init_robots(__global ranluxcl_state_t *ranluxcltab, __global world
 
     unsigned int i;
 
-    // random_position
-    ranluxcl_state_t ranluxclstate;
-    ranluxcl_download_seed(&ranluxclstate, ranluxcltab);
-    float4 random = ranluxcl32(&ranluxclstate);
-    ranluxcl_upload_seed(&ranluxclstate, ranluxcltab);
-
-    worlds[wid].robots[rid].transform.pos.x = random.s0 * 2 - 2;
-    worlds[wid].robots[rid].transform.pos.y = random.s1 * 2 - 2;
-    worlds[wid].robots[rid].transform.rot.sin = random.s2 * 2 - 1;
-    worlds[wid].robots[rid].transform.rot.cos = random.s3 * 2 - 1;
+    set_random_position(ranluxcltab, worlds);
     worlds[wid].robots[rid].wheels_angular_speed.s0 = 0;
     worlds[wid].robots[rid].wheels_angular_speed.s1 = 0;
     worlds[wid].robots[rid].front_led = 0;
@@ -347,16 +390,7 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
          ((worlds[wid].robots[rid].transform.pos.y+ROBOT_BODY_RADIUS) > (worlds[wid].arena_height/2)) ||
          ((worlds[wid].robots[rid].transform.pos.y-ROBOT_BODY_RADIUS) < (-worlds[wid].arena_height/2)) )
     {
-        // random_position
-        ranluxcl_state_t ranluxclstate;
-        ranluxcl_download_seed(&ranluxclstate, ranluxcltab);
-        float4 random = ranluxcl32(&ranluxclstate);
-        ranluxcl_upload_seed(&ranluxclstate, ranluxcltab);
-
-        worlds[wid].robots[rid].transform.pos.x = random.s0 * 4 - 2;
-        worlds[wid].robots[rid].transform.pos.y = random.s1 * 4 - 2;
-        worlds[wid].robots[rid].transform.rot.sin = random.s2 * 2 - 1;
-        worlds[wid].robots[rid].transform.rot.cos = random.s3 * 2 - 1;
+        set_random_position(ranluxcltab, worlds);
     }
 
     for (i = 0; i < NUM_SENSORS; i++)
@@ -370,21 +404,8 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
         float dist = distance(worlds[wid].robots[rid].transform.pos, worlds[wid].robots[otherid].transform.pos);
 
         if (otherid > rid)
-        {
             if (dist < 2*ROBOT_BODY_RADIUS)
-            {
-                // random_position
-                ranluxcl_state_t ranluxclstate;
-                ranluxcl_download_seed(&ranluxclstate, ranluxcltab);
-                float4 random = ranluxcl32(&ranluxclstate);
-                ranluxcl_upload_seed(&ranluxclstate, ranluxcltab);
-
-                worlds[wid].robots[rid].transform.pos.x = random.s0 * 4 - 2;
-                worlds[wid].robots[rid].transform.pos.y = random.s1 * 4 - 2;
-                worlds[wid].robots[rid].transform.rot.sin = random.s2 * 2 - 1;
-                worlds[wid].robots[rid].transform.rot.cos = random.s3 * 2 - 1;
-            }
-        }
+                set_random_position(ranluxcltab, worlds);
 
         if (dist < 2*ROBOT_BODY_RADIUS+IR_RADIUS)
         {
@@ -451,7 +472,7 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
     {
         float dist = distance(worlds[wid].robots[rid].transform.pos, worlds[wid].target_areas[i].center);
 
-        if (dist < pow(worlds[wid].target_areas[i].radius, 2))
+        if (dist < worlds[wid].target_areas[i].radius, 2)
         {
             worlds[wid].robots[rid].sensors[IN_ground] = 1;
 
