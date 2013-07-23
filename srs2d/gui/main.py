@@ -25,6 +25,7 @@ __date__ = "26 Jun 2013"
 import os
 import logging
 import ast
+import pickle
 import scene
 from .. import physics
 import pyopencl as cl
@@ -61,6 +62,8 @@ class Main(gtk.Window):
     <menu action='SimulationMenu'>
       <menuitem action='PlayPause'/>
       <menuitem action='Step'/>
+      <menuitem action='IncreaseSpeed'/>
+      <menuitem action='DecreaseSpeed'/>
     </menu>
     <menu action='HelpMenu'>
       <menuitem action='About'/>
@@ -73,14 +76,15 @@ class Main(gtk.Window):
     <separator/>
     <toolitem action='PlayPause'/>
     <toolitem action='Step'/>
+    <toolitem action='IncreaseSpeed'/>
+    <toolitem action='DecreaseSpeed'/>
   </toolbar>
 </ui>"""
 
     def __init__(self):
         super(Main, self).__init__()
 
-        self.context = cl.create_some_context()
-        self.queue = cl.CommandQueue(self.context)
+        self.simulation = None
 
         self.set_name("SRS2D Viewer")
         self.set_role("srs2d-viewer")
@@ -99,12 +103,14 @@ class Main(gtk.Window):
         ag.add_actions([
             ('FileMenu', None, '_File'),
             ('New',      gtk.STOCK_NEW, '_New Simulation', '<control>N', 'Create a new file', self.on_new_clicked),
-            ('Open',     gtk.STOCK_OPEN, '_Open', '<control>O', 'Open a file', None),
-            ('Save',     gtk.STOCK_SAVE, '_Save', '<control>S', 'Save a file', None),
+            ('Open',     gtk.STOCK_OPEN, '_Open', '<control>O', 'Open a file', self.on_open_clicked),
+            ('Save',     gtk.STOCK_SAVE, '_Save', '<control>S', 'Save a file', self.on_save_clicked),
             ('Quit',     gtk.STOCK_QUIT, '_Quit', '<control>Q', 'Quit application', None),
             ('SimulationMenu',  None, '_Simulation'),
             ('PlayPause',       None, '_Play/Pause', '<control>P', 'Play/pause the simulation', self.on_playpause_clicked),
             ('Step',            None, 'S_tep', '<control>T', 'Step the simulation', self.on_step_clicked),
+            ('IncreaseSpeed',            None, 'Speed +', '<control>plus', 'Increase the speed of simulation', self.on_increase_clicked),
+            ('DecreaseSpeed',            None, 'Speed -', '<control>minus', 'Decrease the speed of simulation', self.on_decrease_clicked),
             ('HelpMenu', None, '_Help'),
             ('About',    None, '_About', None, 'About application', None),
         ])
@@ -178,10 +184,6 @@ class Main(gtk.Window):
     def exit(self, widget, data=None):
         gtk.main_quit()
 
-    def init_simulation(self):
-        self.simulator = physics.Simulator(self.context, self.queue, num_worlds=1, num_robots=30)
-        self.simulator.init_worlds(1.2)
-
     def draw_scene(self):
         try:
             self.scene.draw()
@@ -190,26 +192,26 @@ class Main(gtk.Window):
             gtk.main_quit()
 
     def on_step_clicked(self, button):
-        if self.scene is None:
+        if self.simulation is None:
             return
 
-        if self.scene.is_running():
-            self.scene.stop()
+        if self.simulation.running:
+            self.simulation.stop()
             self.playpause_button.set_label('Start')
             self.playpause_button.set_icon_widget(self.icon_play)
 
-        self.scene.step()
+        self.simulation.step()
 
     def on_playpause_clicked(self, button):
-        if self.scene is None:
+        if self.simulation is None:
             return
 
-        if self.scene.is_running():
-            self.scene.stop()
+        if self.simulation.running:
+            self.simulation.stop()
             self.playpause_button.set_label('Start')
             self.playpause_button.set_icon_widget(self.icon_play)
         else:
-            self.scene.start()
+            self.simulation.start()
             self.playpause_button.set_label('Stop')
             self.playpause_button.set_icon_widget(self.icon_pause)
 
@@ -238,24 +240,53 @@ class Main(gtk.Window):
             numbots = int(dialog.numbots.get_text())
             duration = int(dialog.duration.get_text())
 
-            simulator = physics.Simulator(self.context, self.queue, num_worlds=1, num_robots=numbots)
-            simulator.set_ann_parameters(0, physics.ANNParametersArray.load(params))
-            simulator.init_worlds(1.2)
-            gobject.idle_add(self.simulate, simulator, duration)
+            self.simulation = Simulation(self)
+            self.simulation.simulate(params, numbots, duration, 1/30.0)
 
         dialog.destroy()
 
-    def simulate(self, simulator, duration):
-        if (simulator.clock) >= duration:
-            self.scene.transforms = None
-            self.scene.real_clock = None
+    def on_increase_clicked(self, button):
+        if self.simulation is not None:
+            if self.simulation.speed < 8:
+                self.simulation.speed += 1
+
+    def on_decrease_clicked(self, button):
+        if self.simulation is not None:
+            if self.simulation.speed > 1:
+                self.simulation.speed -= 1
+
+    def on_open_clicked(self, button):
+        chooser = gtk.FileChooserDialog(title='Open simulation replay',
+                    action=gtk.FILE_CHOOSER_ACTION_OPEN,
+                    buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL,
+                             gtk.STOCK_OPEN,gtk.RESPONSE_OK))
+
+        if chooser.run() == gtk.RESPONSE_OK:
+            self.simulation = Simulation(self)
+            f = open(chooser.get_filename())
+            self.simulation.transforms = pickle.load(f)
+            f.close()
+
+            self.scene.real_clock, self.scene.transforms = self.simulation.transforms[0]
+            self.simulation.current = 0
+
+        chooser.destroy()
+
+    def on_save_clicked(self, button):
+        if self.simulation is None:
             return
 
-        simulator.step()
-        self.scene.transforms = simulator.get_transforms()
-        self.scene.real_clock = simulator.clock
+        chooser = gtk.FileChooserDialog(title='Save simulation replay',
+                    action=gtk.FILE_CHOOSER_ACTION_SAVE,
+                    buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL,
+                             gtk.STOCK_SAVE,gtk.RESPONSE_OK))
 
-        gobject.idle_add(self.simulate, simulator, duration)
+        if chooser.run() == gtk.RESPONSE_OK:
+            f = open(chooser.get_filename(), 'w')
+            pickle.dump(self.simulation.transforms, f)
+            f.close()
+
+        chooser.destroy()
 
 class NewSimulationDialog(gtk.Dialog):
     def __init__(self, parent):
@@ -310,3 +341,79 @@ class NewSimulationDialog(gtk.Dialog):
         self.duration.set_text("600")
         self.duration.show()
         table.attach(self.duration, 1, 2, 1, 2)
+
+class Simulation(object):
+    def __init__(self, parent):
+        self.parent = parent
+        self.simulator = None
+
+        self.transforms = []
+        self.current = 0
+        self.speed = 1
+
+        self.running = False
+        self._do_stop = False
+
+    def simulate(self, params, numbots, duration, time_step=1/30.0):
+        context = cl.create_some_context()
+        queue = cl.CommandQueue(context)
+
+        simulator = physics.Simulator(context, queue, num_worlds=1, num_robots=numbots)
+        simulator.set_ann_parameters(0, physics.ANNParametersArray.load(params))
+        simulator.init_worlds(1.2)
+        gobject.idle_add(self._simulator_step, simulator, duration)
+
+    def _simulator_step(self, simulator, duration):
+        if (simulator.clock) >= duration:
+            self.parent.scene.real_clock, self.parent.scene.transforms = self.transforms[0]
+            self.current = 0
+            return
+
+        simulator.step()
+
+        transforms = simulator.get_transforms()
+        clock = simulator.clock
+
+        self.transforms.append((clock, transforms))
+        self.parent.scene.transforms = transforms
+        self.parent.scene.real_clock = simulator.clock
+
+        gobject.idle_add(self._simulator_step, simulator, duration)
+
+    def start(self):
+        self._do_stop = False
+
+        if (self.current+1) >= len(self.transforms):
+            self.running = False
+            return
+
+        if not self.running:
+            self.running = True
+
+            delay_time = (self.transforms[self.current+1][0] - self.transforms[self.current][0]) / self.speed
+            gobject.timeout_add(int(delay_time * 1000), self._run)
+
+    def stop(self):
+        self._do_stop = True
+
+    def _run(self):
+        if self._do_stop:
+            self.running = False
+            return
+
+        self.step()
+
+        if (self.current+1) >= len(self.transforms):
+            self.running = False
+            return
+
+        delay_time = (self.transforms[self.current+1][0] - self.transforms[self.current][0]) / self.speed
+        gobject.timeout_add(int(delay_time * 1000), self._run)
+
+    def step(self):
+        if (self.current+1) >= len(self.transforms):
+            return
+
+        self.parent.scene.real_clock, self.parent.scene.transforms = self.transforms[self.current+1]
+        self.parent.scene.speed = self.speed
+        self.current += 1

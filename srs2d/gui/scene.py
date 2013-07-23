@@ -35,12 +35,6 @@ class Scene(object):
     do_exit = False
     exit_callback = None
 
-    world = None
-    running = False
-    do_step = False
-
-    target_fps = 30.0
-
     def __init__(self, background=(0,0,0), resolution=(800,600)):
         self.background = background
         self.resolution = resolution
@@ -73,18 +67,7 @@ class Scene(object):
 
         self.transforms = None
         self.real_clock = None
-
-    def start(self):
-        self.running = True
-
-    def stop(self):
-        self.running = False
-
-    def step(self):
-        self.do_step = True
-
-    def is_running(self):
-        return self.running
+        self.speed = None
 
     def on_mouse_down(self, event):
         if self.dropdown.on_mouse_down(event):
@@ -142,9 +125,11 @@ class Scene(object):
         if self.real_clock is not None:
             self.write("%02d:%02d:%02d" % (int(self.real_clock) / 3600,
                                           (int(self.real_clock) % 3600) / 60,
-                                           int(self.real_clock) % 60), (80,80,200))
+                                           int(self.real_clock) % 60), (80,80,255))
+        if self.speed is not None:
+            self.write("speed = %dx" % self.speed, (80,196,255))
 
-        self.write(str(self.clock.get_fps()), (200,80,80))
+        self.write(str(self.clock.get_fps()), (255,80,80))
 
         self.dropdown.draw(self.surface)
 

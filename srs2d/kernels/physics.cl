@@ -4,11 +4,11 @@
 #define WHEELS_MAX_ANGULAR_SPEED    12.565
 #define WHEELS_DISTANCE             0.0825
 #define WHEELS_RADIUS               0.02
-#define IR_RADIUS                   0.025 // from center of the robot
-#define CAMERA_RADIUS               0.35 // from center of the robot
+#define IR_RADIUS                   0.045 // from center of the robot
+#define CAMERA_RADIUS               0.60 // from center of the robot
 #define CAMERA_ANGLE                1.2566370614359172 // 72 degrees
-#define LED_PROTUBERANCE            0.01 // from outside border of the robot
-#define TARGET_AREAS_RADIUS         0.27
+#define LED_PROTUBERANCE            0.02 // from outside border of the robot
+#define TARGET_AREAS_RADIUS         0.37
 
 #define ARENA_HEIGHT    4.20
 #define ARENA_WIDTH_MIN 4.20
@@ -307,8 +307,8 @@ void step_actuators(__global ranluxcl_state_t *ranluxcltab, __global world_t *wo
 
     worlds[wid].robots[rid].wheels_angular_speed.s0 = worlds[wid].robots[rid].actuators[OUT_wheels0] * WHEELS_MAX_ANGULAR_SPEED;
     worlds[wid].robots[rid].wheels_angular_speed.s1 = worlds[wid].robots[rid].actuators[OUT_wheels1] * WHEELS_MAX_ANGULAR_SPEED;
-    worlds[wid].robots[rid].front_led = worlds[wid].robots[rid].actuators[OUT_front_led];
-    worlds[wid].robots[rid].rear_led = worlds[wid].robots[rid].actuators[OUT_rear_led];
+    worlds[wid].robots[rid].front_led = (worlds[wid].robots[rid].actuators[OUT_front_led] > 0.5) ? 1 : 0;
+    worlds[wid].robots[rid].rear_led = (worlds[wid].robots[rid].actuators[OUT_rear_led] > 0.5) ? 1 : 0;
 }
 
 void step_dynamics(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds, float time_step)
@@ -403,7 +403,7 @@ void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global world_t *worl
             float2 orig = worlds[wid].robots[rid].transform.pos;
             float angle_robot = atan2(worlds[wid].robots[rid].transform.rot.sin, worlds[wid].robots[rid].transform.rot.cos);
 
-            if (worlds[wid].robots[otherid].actuators[OUT_front_led] > 0.5)
+            if (worlds[wid].robots[otherid].front_led == 1)
             {
                 float2 dest = transform_mul_vec(worlds[wid].robots[otherid].transform, front);
 
@@ -424,7 +424,7 @@ void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global world_t *worl
                 }
             }
 
-            if (worlds[wid].robots[otherid].actuators[OUT_rear_led] > 0.5)
+            if (worlds[wid].robots[otherid].rear_led == 1)
             {
                 float2 dest = transform_mul_vec(worlds[wid].robots[otherid].transform, rear);
 
