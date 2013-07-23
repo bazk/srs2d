@@ -107,7 +107,19 @@ class Simulator(object):
         self.prg.init_robots(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
 
     def step(self):
-        self.prg.step_robots(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
+        if not self.need_global_barrier:
+            self.prg.step_robots(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
+
+        else:
+            self.prg.step_actuators(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds)
+
+            for i in range(self.dynamics_iterations):
+                kernel = self.prg.step_dynamics
+                kernel.set_scalar_arg_dtypes((None, None, np.float32))
+                kernel(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds, self.time_step/self.dynamics_iterations)
+
+            self.prg.step_sensors(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds)
+            self.prg.step_controllers(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
 
         self.step_count += 1
         self.clock += self.time_step
@@ -128,15 +140,15 @@ class Simulator(object):
                     kernel.set_scalar_arg_dtypes((None, np.float32))
                     kernel(self.queue, self.global_size, self.local_size, self.worlds, 0).wait()
 
-                self.prg.step_actuators(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
+                self.prg.step_actuators(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds)
 
-                for i in range(DYNAMICS_ITERATIONS):
+                for i in range(self.dynamics_iterations):
                     kernel = self.prg.step_dynamics
                     kernel.set_scalar_arg_dtypes((None, None, np.float32))
-                    kernel(self.queue, self.global_size, self.local_size, ranluxcltab, worlds, TIME_STEP/DYNAMICS_ITERATIONS).wait()
+                    kernel(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds, self.time_step/self.dynamics_iterations)
 
-                self.prg.step_sensors(self.queue, self.global_size, self.local_size, ranluxcltab, worlds).wait()
-                self.prg.step_controllers(self.queue, self.global_size, self.local_size, ranluxcltab, worlds).wait()
+                self.prg.step_sensors(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds)
+                self.prg.step_controllers(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
 
                 cur += 1
 
