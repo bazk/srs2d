@@ -47,7 +47,7 @@ class PSO(object):
         self.gbest_fitness = None
         self.particles = []
 
-    def run(self, population_size=42, max_generations=2000):
+    def run(self, population_size=40, max_generations=2000):
         context = cl.create_some_context()
         queue = cl.CommandQueue(context)
 
