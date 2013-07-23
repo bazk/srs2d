@@ -23,16 +23,22 @@ __author__ = "Eduardo L. Buratti <eburatti09@gmail.com>"
 __date__ = "26 Jun 2013"
 
 import os
-import gtk
-import gobject
-import threading
 import logging
+import ast
 import scene
 from .. import physics
+import pyopencl as cl
+
+import pygtk
+pygtk.require('2.0')
+import gtk
+import gobject
 
 __log__ = logging.getLogger(__name__)
 
 gobject.threads_init()
+
+
 
 def get_resource_path(rel_path):
     dir_of_py_file = os.path.dirname(__file__)
@@ -43,12 +49,81 @@ def get_resource_path(rel_path):
 class Main(gtk.Window):
     scene_resolution = (800, 600)
 
+    ui_string = """<ui>
+  <menubar name='Menubar'>
+    <menu action='FileMenu'>
+      <menuitem action='New'/>
+      <menuitem action='Open'/>
+      <menuitem action='Save'/>
+      <separator/>
+      <menuitem action='Quit'/>
+    </menu>
+    <menu action='SimulationMenu'>
+      <menuitem action='PlayPause'/>
+      <menuitem action='Step'/>
+    </menu>
+    <menu action='HelpMenu'>
+      <menuitem action='About'/>
+    </menu>
+  </menubar>
+  <toolbar name='Toolbar'>
+    <toolitem action='New'/>
+    <toolitem action='Open'/>
+    <toolitem action='Save'/>
+    <separator/>
+    <toolitem action='PlayPause'/>
+    <toolitem action='Step'/>
+  </toolbar>
+</ui>"""
+
     def __init__(self):
         super(Main, self).__init__()
+
+        self.context = cl.create_some_context()
+        self.queue = cl.CommandQueue(self.context)
+
         self.set_name("SRS2D Viewer")
         self.set_role("srs2d-viewer")
+        self.set_size_request(880, 610)
 
         self.connect("destroy", self.exit)
+
+        vbox = gtk.VBox()
+        self.add(vbox)
+        vbox.show()
+
+        ui = gtk.UIManager()
+        ui.add_ui_from_string(self.ui_string)
+
+        ag = gtk.ActionGroup('AppActions')
+        ag.add_actions([
+            ('FileMenu', None, '_File'),
+            ('New',      gtk.STOCK_NEW, '_New Simulation', '<control>N', 'Create a new file', self.on_new_clicked),
+            ('Open',     gtk.STOCK_OPEN, '_Open', '<control>O', 'Open a file', None),
+            ('Save',     gtk.STOCK_SAVE, '_Save', '<control>S', 'Save a file', None),
+            ('Quit',     gtk.STOCK_QUIT, '_Quit', '<control>Q', 'Quit application', None),
+            ('SimulationMenu',  None, '_Simulation'),
+            ('PlayPause',       None, '_Play/Pause', '<control>P', 'Play/pause the simulation', self.on_playpause_clicked),
+            ('Step',            None, 'S_tep', '<control>T', 'Step the simulation', self.on_step_clicked),
+            ('HelpMenu', None, '_Help'),
+            ('About',    None, '_About', None, 'About application', None),
+        ])
+        ui.insert_action_group(ag, 0)
+
+        self.add_accel_group(ui.get_accel_group())
+
+        menubar = ui.get_widget('/Menubar')
+        vbox.pack_start(menubar, expand=False)
+        menubar.show()
+
+        toolbar = ui.get_widget('/Toolbar')
+        vbox.pack_start(toolbar, expand=False)
+        toolbar.realize()
+        toolbar.show()
+
+        status = gtk.Statusbar()
+        vbox.pack_end(status, expand=False)
+        status.show()
 
         self.icon_play = gtk.image_new_from_file(get_resource_path("icons/play.xpm"))
         self.icon_play.show()
@@ -57,28 +132,15 @@ class Main(gtk.Window):
         self.icon_loop = gtk.image_new_from_file(get_resource_path("icons/loop.xpm"))
         self.icon_loop.show()
 
-        vbox = gtk.VBox()
-        self.add(vbox)
+        self.playpause_button = ui.get_widget('/Toolbar/PlayPause')
+        self.playpause_button.set_label('Start')
+        self.playpause_button.set_icon_widget(self.icon_play)
 
-        toolbar = gtk.Toolbar()
-        toolbar.set_orientation(gtk.ORIENTATION_HORIZONTAL)
-        toolbar.set_style(gtk.TOOLBAR_ICONS)
-        toolbar.set_border_width(5)
-
-        self.step_button = gtk.ToolButton(label='Step')
+        self.step_button = ui.get_widget('/Toolbar/Step')
         self.step_button.set_icon_widget(self.icon_loop)
-        self.step_button.connect('clicked', self.on_step_clicked)
-        toolbar.insert(self.step_button, 0)
-
-        self.start_stop_button = gtk.ToolButton(label='Start')
-        self.start_stop_button.set_icon_widget(self.icon_play)
-        self.start_stop_button.connect('clicked', self.on_start_stop_clicked)
-        toolbar.insert(self.start_stop_button, 1)
-
-        vbox.pack_start(toolbar, expand=False, fill=False)
 
         hbox = gtk.HBox()
-        vbox.pack_start(hbox, expand=True, fill=True)
+        hbox.show()
 
         area_event_box = gtk.EventBox()
         area_event_box.add_events(gtk.gdk.MOTION_NOTIFY | gtk.gdk.BUTTON_PRESS | gtk.gdk.SCROLL_MASK)
@@ -86,14 +148,16 @@ class Main(gtk.Window):
         area_event_box.connect('button-release-event', self.on_mouse_up)
         area_event_box.connect('motion-notify-event', self.on_mouse_move)
         area_event_box.connect("scroll-event", self.on_mouse_scroll)
+        area_event_box.show()
+
         area = gtk.DrawingArea()
         area.set_app_paintable(True)
         area.set_size_request(self.scene_resolution[0], self.scene_resolution[1])
-        area_event_box.add(area)
-        hbox.pack_start(area_event_box, expand=True, fill=False)
+        area.show()
 
-        attr_view = ObjectAttributesTreeView()
-        hbox.pack_end(attr_view.get_view(), expand=False, fill=True)
+        vbox.pack_start(hbox, expand=True, fill=True)
+        hbox.pack_start(area_event_box, expand=True, fill=False)
+        area_event_box.add(area)
 
         area.realize()
 
@@ -105,20 +169,23 @@ class Main(gtk.Window):
         gtk.gdk.flush()
 
         self.scene = scene.Scene(resolution=self.scene_resolution)
-        self.scene.selection_change_callback = attr_view.on_selection_change
-        gobject.idle_add(self.draw_scene)
+        gobject.timeout_add(1000/30, self.draw_scene)
 
-        self.show_all()
+        self.show()
 
         gtk.main()
 
     def exit(self, widget, data=None):
         gtk.main_quit()
 
+    def init_simulation(self):
+        self.simulator = physics.Simulator(self.context, self.queue, num_worlds=1, num_robots=30)
+        self.simulator.init_worlds(1.2)
+
     def draw_scene(self):
         try:
             self.scene.draw()
-            gobject.idle_add(self.draw_scene)
+            gobject.timeout_add(1000/30, self.draw_scene)
         except KeyboardInterrupt:
             gtk.main_quit()
 
@@ -128,23 +195,23 @@ class Main(gtk.Window):
 
         if self.scene.is_running():
             self.scene.stop()
-            self.start_stop_button.set_label('Start')
-            self.start_stop_button.set_icon_widget(self.icon_play)
+            self.playpause_button.set_label('Start')
+            self.playpause_button.set_icon_widget(self.icon_play)
 
         self.scene.step()
 
-    def on_start_stop_clicked(self, button):
+    def on_playpause_clicked(self, button):
         if self.scene is None:
             return
 
         if self.scene.is_running():
             self.scene.stop()
-            self.start_stop_button.set_label('Start')
-            self.start_stop_button.set_icon_widget(self.icon_play)
+            self.playpause_button.set_label('Start')
+            self.playpause_button.set_icon_widget(self.icon_play)
         else:
             self.scene.start()
-            self.start_stop_button.set_label('Stop')
-            self.start_stop_button.set_icon_widget(self.icon_pause)
+            self.playpause_button.set_label('Stop')
+            self.playpause_button.set_icon_widget(self.icon_pause)
 
     def on_mouse_down(self, widget, event):
         if self.scene is not None:
@@ -162,61 +229,84 @@ class Main(gtk.Window):
         if self.scene is not None:
             self.scene.on_mouse_scroll(event)
 
-class ObjectAttributesTreeView():
-    def __init__(self):
-        self.store = gtk.TreeStore(str, object)
+    def on_new_clicked(self, button):
+        dialog = NewSimulationDialog(self)
 
-        self.view = gtk.TreeView(self.store)
-        self.view.set_size_request(230, 120)
+        if dialog.run() == gtk.RESPONSE_ACCEPT:
+            tb = dialog.params.get_buffer()
+            params = ast.literal_eval(tb.get_text(*tb.get_bounds()))
+            numbots = int(dialog.numbots.get_text())
+            duration = int(dialog.duration.get_text())
 
-        self.renderer = {}
-        self.column = {}
+            simulator = physics.Simulator(self.context, self.queue, num_worlds=1, num_robots=numbots)
+            simulator.set_ann_parameters(0, physics.ANNParametersArray.load(params))
+            simulator.init_worlds(1.2)
+            gobject.idle_add(self.simulate, simulator, duration)
 
-        self.renderer0 = gtk.CellRendererText()
-        self.column0 = gtk.TreeViewColumn('Key', self.renderer0, text=0)
-        self.view.append_column(self.column0)
+        dialog.destroy()
 
-        self.renderer1 = gtk.CellRendererText()
-        self.renderer1.connect('edited', self.cell_edited, self.store)
-        self.column1 = gtk.TreeViewColumn('Value', self.renderer1)
-        self.column1.set_cell_data_func(self.renderer1, self.cell_data)
-        self.view.append_column(self.column1)
+    def simulate(self, simulator, duration):
+        if (simulator.clock) >= duration:
+            self.scene.transforms = None
+            self.scene.real_clock = None
+            return
 
-    def get_view(self):
-        return self.view
+        simulator.step()
+        self.scene.transforms = simulator.get_transforms()
+        self.scene.real_clock = simulator.clock
 
-    def on_selection_change(self, obj):
-        self.store.clear()
+        gobject.idle_add(self.simulate, simulator, duration)
 
-        # if obj is not None:
-        #     for attr in obj.attributes:
-        #         # value = attr.getter()
+class NewSimulationDialog(gtk.Dialog):
+    def __init__(self, parent):
+        super(NewSimulationDialog, self).__init__("New Simulation", parent, gtk.DIALOG_MODAL,
+            (gtk.STOCK_CANCEL, gtk.RESPONSE_REJECT,
+             gtk.STOCK_OK, gtk.RESPONSE_ACCEPT))
 
-        #         # if isinstance(value, tuple):
-        #         #     root = self.store.append(None, (attr.key, value, attr))
-        #         #     i = 0
-        #         #     for part in value:
-        #         #         self.store.append(root, (i, value, attr))
-        #         #         i += 1
+        self.set_default_size(450, 300)
 
-        #         # elif isinstance(value, physics.Vector):
-        #         #     x, y = (value.x, value.y)
-        #         #     root = self.store.append(None, (attr.key, value, attr))
-        #         #     self.store.append(root, ('x', value, attr))
-        #         #     self.store.append(root, ('y', value, attr))
+        box = self.get_content_area()
 
-        #         # else:
-        #         self.store.append(None, (attr.key, attr))
+        vbox = gtk.VBox()
+        vbox.show()
+        box.add(vbox)
 
-    def cell_data(self, column, cell, model, iter):
-        key = model.get_value(iter, 0)
-        attr = model.get_value(iter, 1)
-        cell.set_property('editable', not attr.read_only)
-        cell.set_property('text', attr.getter())
+        annframe = gtk.Frame('Neural Network Parameters')
+        annframe.show()
+        vbox.pack_start(annframe)
 
-    def cell_edited(self, cell, path, new_text, model):
-        row = model[path]
-        key = row[0]
-        attr = row[1]
-        attr.setter(eval(new_text))
-        cell.set_property('text', attr.getter())
+        sw = gtk.ScrolledWindow()
+        sw.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+        sw.show()
+        annframe.add(sw)
+
+        self.params = gtk.TextView()
+        self.params.set_wrap_mode(gtk.WRAP_CHAR)
+        self.params.set_left_margin(1)
+        self.params.get_buffer().set_text("{'weights_hidden': [-4.4505185761480952, 2.5598273256143904, 4.5828743234552274, 1.2560579289669025, -1.7466529424435975, 5.0, 2.7300601158157378, 2.4262153844069059, 1.0071024645233857, -1.7789296084891975, 3.790499395955587, 4.3267205514442058, -1.286784962675056, -5.0, -0.20345244385136185, -4.825646189845255, 4.0878325397249187, 5.0, -5.0, -2.9969847053115379, -1.4032875721005262, -3.1065096396078866, -1.7694204540645415, -1.6497012820858057, -4.0343279859737082, -1.6460255004967883, -5.0, 2.3231306773327356, 2.0184745859718571, 1.8328136642082669, -4.2647809444690932, 4.629470774426391, -0.50334180724300248, -0.77017128862483153, 0.81674994196099471, 0.069827745474781322, -5.0, 0.56309348228066769, -0.3331092256383581], 'bias_hidden': [5.0, 5.0, 4.8017465677787383], 'bias': [1.3435981656670313, -0.69313039175036906, 0.7701715475816715, -5.0], 'weights': [-4.7820658763490647, 3.7884558376066537, -1.1442150112672378, 3.4826859243799433, 2.8929823306805775, -4.9327193154906581, -1.1580630967099421, -2.3750959720694489, 1.8106065510103271, -5.0, -1.1073478467093947, -0.39556206304002028, -2.2512912448950066, 2.0944056905559694, -5.0, 0.63125888851444767, -2.5747843678160791, -2.1176687438209565, 4.3516915371163023, 3.571688502982604, 2.9384231018974019, 5.0, 1.8505539859851836, 0.14024910404464785, 0.52653576723790474, -5.0, 2.68981877727132, -3.6211877304167892, -1.169266429453498, 2.9696656704271565, -3.4303728581563404, 0.76355375857445451, 0.64761032588344114, 0.17338817546061991, -2.4543058794780044, -0.0086160934198825645, -2.8855577637302057, 1.2099226149096054, 5.0, 0.17127966445851928, -1.6738740583751173, -5.0, -5.0, -5.0, -5.0, 4.6869527006569669, -1.4926791383362452, 1.7266254795703384, -4.9180728293261184, -5.0, 2.6641907092220025, 2.6736459741367415, -5.0, 0.82363677140193414, 5.0, -2.0351141581266301, 1.5421031671800647, 5.0, 2.6382953076237632, -5.0, -1.6322296978962465, -0.20804138053596199, 1.6587634080772724, -5.0], 'timec_hidden': [1.0, 1.0, 1.0]}")
+        self.params.show()
+        sw.add(self.params)
+
+        simframe = gtk.Frame('Simulation Parameters')
+        simframe.show()
+        vbox.pack_start(simframe)
+
+        table = gtk.Table(2, 2)
+        table.show()
+        simframe.add(table)
+
+        numbots_label = gtk.Label('# of robots: ')
+        numbots_label.show()
+        table.attach(numbots_label, 0, 1, 0, 1)
+        self.numbots = gtk.Entry(max=8)
+        self.numbots.set_text("30")
+        self.numbots.show()
+        table.attach(self.numbots, 1, 2, 0, 1)
+
+        duration_label = gtk.Label('Duration (in seconds): ')
+        duration_label.show()
+        table.attach(duration_label, 0, 1, 1, 2)
+        self.duration = gtk.Entry(max=12)
+        self.duration.set_text("600")
+        self.duration.show()
+        table.attach(self.duration, 1, 2, 1, 2)

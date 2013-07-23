@@ -25,12 +25,9 @@ __date__ = "21 Jun 2013"
 import math
 import logging
 import pygame
-import pyopencl as cl
-import numpy as np
 import gtk
 
 import dropdown
-from .. import physics
 
 __log__ = logging.getLogger(__name__)
 
@@ -43,9 +40,6 @@ class Scene(object):
     do_step = False
 
     target_fps = 30.0
-
-    selected_obj = None
-    selection_change_callback = None
 
     def __init__(self, background=(0,0,0), resolution=(800,600)):
         self.background = background
@@ -69,18 +63,16 @@ class Scene(object):
         self.clock = pygame.time.Clock()
 
         self.dropdown = dropdown.DropDown(self.font)
-        self.dropdown.add_item('Add robot', callback=self.add_robot)
+        #self.dropdown.add_item('Add robot', callback=self.add_robot)
+
+        self.mouse_pos = (0,0)
 
         self.zoom = 180
         self.center = (0, 0)
         self.offset = (-self.resolution[0]/2, -self.resolution[1]/2)
 
-        context = cl.create_some_context()
-        queue = cl.CommandQueue(context)
-
-        self.simulator = physics.Simulator(context, queue, num_worlds=1, num_robots=30)
-        self.simulator.init_worlds(1.2)
-        self.transforms = self.simulator.get_transforms()
+        self.transforms = None
+        self.real_clock = None
 
     def start(self):
         self.running = True
@@ -94,33 +86,18 @@ class Scene(object):
     def is_running(self):
         return self.running
 
-    def add_robot(self, pos):
-        # rob = robot.Robot(position=self._to_world(pos))
-        # self.world.add(rob)
-        # # rob.power = (random.uniform(-1.0, 1.0), random.uniform(-1.0, 1.0))
-        # # rob.front_led.on = random.uniform(0,1) > 0.5
-        # # rob.rear_led.on = random.uniform(0,1) > 0.5
-        # self.robots.append(rob)
-        pass
-
     def on_mouse_down(self, event):
-        self.dropdown.on_mouse_down(event)
+        if self.dropdown.on_mouse_down(event):
+            return # event handled by dropdown
 
     def on_mouse_up(self, event):
-        if not self.dropdown.on_mouse_up(event):
-            if event.button == 1:
-                new_obj = self._check_selection(event)
-
-                if new_obj != self.selected_obj:
-                    if self.selection_change_callback is not None:
-                        self.selection_change_callback(new_obj)
-
-                self.selected_obj = new_obj
-
-                return (self.selected_obj is not None)
+        if self.dropdown.on_mouse_up(event):
+            return # event handled by dropdown
 
     def on_mouse_move(self, event):
         self.dropdown.on_mouse_move(event)
+
+        self.mouse_pos = (event.x, event.y)
 
     def on_mouse_scroll(self, event):
         if event.direction == gtk.gdk.SCROLL_UP:
@@ -128,45 +105,7 @@ class Scene(object):
         elif event.direction == gtk.gdk.SCROLL_DOWN:
             self.zoom *= 0.9
 
-    def _check_selection(self, event):
-        # for obj in self.world.children: # just nodes attached directly in world
-        #     if not isinstance(obj, physics.Body):
-        #         continue
-
-        #     square = obj.bounding_rectangle()
-
-        #     # convert to screen points (swap high_y and low_y because of the screen y-flip)
-        #     low_x, high_y = self._to_screen(square.low)
-        #     high_x, low_y = self._to_screen(square.high)
-
-        #     if (event.x >= low_x) and (event.y >= low_y) and \
-        #        (event.x <= high_x) and (event.y <= high_y):
-        #         return obj
-
-        return None
-
-    def on_select_shape(self, shape):
-        print 'on_select_shape'
-
-    def on_deselect_shape(self, shape):
-        print 'on_deselect_shape'
-
-    def rot_mul_vec(self, rot, vec):
-        return ( rot[1] * vec[0] - rot[0] * vec[1],
-                 rot[0] * vec[0] + rot[1] * vec[1] )
-
-    def transform_mul_vec(self, transform, vec):
-        return ( (transform[3] * vec[0] - transform[2] * vec[1]) + transform[0],
-                 (transform[2] * vec[0] + transform[3] * vec[1]) + transform[1] )
-
     def draw(self):
-        if self.running or self.do_step:
-            for i in range(128):
-                self.simulator.step()
-            self.do_step = False
-
-            self.transforms = self.simulator.get_transforms()
-
         self.screen.fill(self.background)
         self.surface.fill(self.background)
         self.__write_pos = 30
@@ -200,17 +139,17 @@ class Scene(object):
                 if abs(ao - ad2) <= math.radians(36):
                     self.draw_segment(self._to_screen(orig), self._to_screen(dest2), (0,255,255))
 
-        self.dropdown.draw(self.surface)
-
-        real_clock = self.simulator.clock
+        if self.real_clock is not None:
+            self.write("%02d:%02d:%02d" % (int(self.real_clock) / 3600,
+                                          (int(self.real_clock) % 3600) / 60,
+                                           int(self.real_clock) % 60), (80,80,200))
 
         self.write(str(self.clock.get_fps()), (200,80,80))
-        self.write("%02d:%02d:%02d" % (int(real_clock) / 3600,
-                                      (int(real_clock) % 3600) / 60,
-                                       int(real_clock) % 60), (80,80,200))
+
+        self.dropdown.draw(self.surface)
 
         self.screen.blit(self.surface, (0, 0))
-        self.clock.tick(self.target_fps)
+        self.clock.tick()
         pygame.display.flip()
 
     def _to_screen(self, point):
@@ -232,73 +171,13 @@ class Scene(object):
 
         return (x, y)
 
-    def draw_robot(self, robot):
-        center = self._to_screen(robot.transform.pos)
-        radius = robot.body_radius * self.zoom
-        orientation = (robot.transform.rot.sin, robot.transform.rot.cos)
-        self.draw_circle(center, radius, orientation=orientation, fill=(255,0,0,128), border=(255,0,0,255))
+    def rot_mul_vec(self, rot, vec):
+        return ( rot[1] * vec[0] - rot[0] * vec[1],
+                 rot[0] * vec[0] + rot[1] * vec[1] )
 
-    def draw_nodes_recursive(self, node):
-        if node.realized:
-            self.draw_node(node)
-
-            for node in node.children:
-                self.draw_nodes_recursive(node)
-
-    def draw_node(self, node):
-        if node == self.selected_obj:
-            square = node.bounding_rectangle()
-            vertices = [
-                self._to_screen(square.low),
-                self._to_screen(physics.Vector(square.high.x, square.low.y)),
-                self._to_screen(square.high),
-                self._to_screen(physics.Vector(square.low.x, square.high.y))
-            ]
-            self.draw_polygon(vertices, border=(64, 0, 255, 255))
-
-        if isinstance(node, physics.Body):
-            for shape in node.shapes:
-                self.draw_shape(shape)
-
-        # elif isinstance(node, physics.RaycastSensor):
-        #     origin = self._to_screen(node.origin)
-        #     for vertex in node.vertices:
-        #         self.draw_segment(origin, self._to_screen(vertex), (255, 0, 0, 64))
-
-        #     self.surface.blit(self.font.render(str(node.values[0]), True, (255,255,255)), (origin[0] + 15, origin[1]+5))
-        #     self.surface.blit(self.font.render(str(node.values[1]), True, (255,255,255)), (origin[0] + 15, origin[1]-5))
-
-        # elif isinstance(node, robot.ColorPadActuator):
-        #     center = self._to_screen(node.center)
-        #     radius = node.radius * self.zoom
-
-        #     self.draw_circle(center, radius, fill=(0, 255, 255, 64))
-
-    def draw_shape(self, shape):
-        if shape.color is None:
-            color = (146, 229, 146)
-        else:
-            color = shape.color
-
-        # if (self.selected_shape is not None) and (shape.object_id == self.selected_shape.object_id):
-        #     fill = (color[0], color[1], color[2], 87)
-        #     border = (color[0], color[1], color[2], 242)
-        # else:
-        #     fill = (color[0], color[1], color[2], 47)
-        #     border = (color[0], color[1], color[2], 142)
-
-        fill = (color[0], color[1], color[2], 87)
-        border = (color[0], color[1], color[2], 242)
-
-        if isinstance(shape, physics.PolygonShape):
-            vertices = [ self._to_screen(vertex) for vertex in shape.vertices ]
-            self.draw_polygon(vertices, fill=fill, border=border)
-
-        elif isinstance(shape, physics.CircleShape):
-            center = self._to_screen(shape.center)
-            radius = shape.radius * self.zoom
-
-            self.draw_circle(center, radius, orientation=shape.orientation, fill=fill, border=border)
+    def transform_mul_vec(self, transform, vec):
+        return ( (transform[3] * vec[0] - transform[2] * vec[1]) + transform[0],
+                 (transform[2] * vec[0] + transform[3] * vec[1]) + transform[1] )
 
     def draw_segment(self, p1, p2, fill=None):
         if not fill:
