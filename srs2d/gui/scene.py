@@ -68,6 +68,7 @@ class Scene(object):
         self.transforms = None
         self.real_clock = None
         self.speed = None
+        self.fitness = None
 
     def on_mouse_down(self, event):
         if self.dropdown.on_mouse_down(event):
@@ -128,6 +129,9 @@ class Scene(object):
                                            int(self.real_clock) % 60), (80,80,255))
         if self.speed is not None:
             self.write("speed = %dx" % self.speed, (80,196,255))
+
+        if self.fitness is not None:
+            self.write("fitness = %f" % self.fitness, (196,80,255))
 
         self.write(str(self.clock.get_fps()), (255,80,80))
 
