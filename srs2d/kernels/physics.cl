@@ -536,6 +536,8 @@ __kernel void simulate(__global ranluxcl_state_t *ranluxcltab, __global world_t 
 
         cur += 1;
     }
+
+    worlds[wid].robots[rid].fitness += worlds[wid].robots[rid].energy;
 }
 
 __kernel void get_transform_matrices(__global world_t *worlds, __global float4 *transforms)
