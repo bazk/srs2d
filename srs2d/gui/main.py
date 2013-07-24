@@ -239,9 +239,10 @@ class Main(gtk.Window):
             params = ast.literal_eval(tb.get_text(*tb.get_bounds()))
             numbots = int(dialog.numbots.get_text())
             duration = int(dialog.duration.get_text())
+            distance = float(dialog.distance.get_text())
 
             self.simulation = Simulation(self)
-            self.simulation.simulate(params, numbots, duration, 1/30.0)
+            self.simulation.simulate(params, numbots, duration, distance, 1/30.0)
 
         dialog.destroy()
 
@@ -264,7 +265,9 @@ class Main(gtk.Window):
         if chooser.run() == gtk.RESPONSE_OK:
             self.simulation = Simulation(self)
             f = open(chooser.get_filename())
-            self.simulation.transforms = pickle.load(f)
+            data = pickle.load(f)
+            self.scene.distance = data['distance']
+            self.simulation.transforms = data['transforms']
             f.close()
 
             self.scene.real_clock, self.scene.transforms = self.simulation.transforms[0]
@@ -283,7 +286,11 @@ class Main(gtk.Window):
 
         if chooser.run() == gtk.RESPONSE_OK:
             f = open(chooser.get_filename(), 'w')
-            pickle.dump(self.simulation.transforms, f)
+            data = {
+                'distance': self.simulation.distance,
+                'transforms': self.simulation.transforms
+            }
+            pickle.dump(data, f)
             f.close()
 
         chooser.destroy()
@@ -341,6 +348,14 @@ class NewSimulationDialog(gtk.Dialog):
         self.duration.show()
         table.attach(self.duration, 1, 2, 1, 2)
 
+        distance_label = gtk.Label('Targets distance: ')
+        distance_label.show()
+        table.attach(distance_label, 0, 1, 2, 3)
+        self.distance = gtk.Entry(max=8)
+        self.distance.set_text("2.2")
+        self.distance.show()
+        table.attach(self.distance, 1, 2, 2, 3)
+
 class Simulation(object):
     def __init__(self, parent):
         self.parent = parent
@@ -350,21 +365,26 @@ class Simulation(object):
         self.current = 0
         self.speed = 1
 
+        self.distance = 2.2
+
         self.running = False
         self._do_stop = False
 
-    def simulate(self, params, numbots, duration, time_step=1/30.0):
+    def simulate(self, params, numbots, duration, distance, time_step=1/30.0):
         context = cl.create_some_context()
         queue = cl.CommandQueue(context)
 
+        self.distance = distance
+
         simulator = physics.Simulator(context, queue, num_worlds=1, num_robots=numbots)
         simulator.set_ann_parameters(0, physics.ANNParametersArray.load(params))
-        simulator.init_worlds(1.2)
+        simulator.init_worlds(distance)
         gobject.idle_add(self._simulator_step, simulator, duration)
 
     def _simulator_step(self, simulator, duration):
         if (simulator.clock) >= duration:
             self.parent.scene.fitness = None
+            self.parent.distance = None
             self.parent.scene.real_clock, self.parent.scene.transforms = self.transforms[0]
             self.current = 0
             return
@@ -379,6 +399,7 @@ class Simulation(object):
         self.parent.scene.transforms = transforms
         self.parent.scene.real_clock = simulator.clock
         self.parent.scene.fitness = fitness
+        self.parent.scene.distance = self.distance
 
         gobject.idle_add(self._simulator_step, simulator, duration)
 

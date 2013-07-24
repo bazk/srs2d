@@ -69,6 +69,7 @@ class Scene(object):
         self.real_clock = None
         self.speed = None
         self.fitness = None
+        self.distance = None
 
     def on_mouse_down(self, event):
         if self.dropdown.on_mouse_down(event):
@@ -93,6 +94,12 @@ class Scene(object):
         self.screen.fill(self.background)
         self.surface.fill(self.background)
         self.__write_pos = 30
+
+        if self.distance is not None:
+            x = math.sqrt(((self.distance / 2.0) ** 2) / 2.0)
+
+            self.draw_circle(self._to_screen((-x, x)), 0.37 * self.zoom, fill=(222,154,255,64))
+            self.draw_circle(self._to_screen((x, -x)), 0.37 * self.zoom, fill=(222,154,255,64))
 
         if self.transforms is not None:
             transform = self.transforms[0]
