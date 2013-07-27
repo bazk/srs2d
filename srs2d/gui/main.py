@@ -378,6 +378,7 @@ class Simulation(object):
 
         simulator = physics.Simulator(context, queue, num_worlds=1, num_robots=numbots)
         simulator.set_ann_parameters(0, physics.ANNParametersArray.load(params))
+        simulator.commit_ann_parameters()
         simulator.init_worlds(distance)
         gobject.idle_add(self._simulator_step, simulator, duration)
 
