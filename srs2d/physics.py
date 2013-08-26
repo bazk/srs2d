@@ -22,6 +22,7 @@ import os
 import logging
 import random
 import copy
+import math
 import numpy as np
 import pyopencl as cl
 import pyopencl.characterize
@@ -135,7 +136,7 @@ class Simulator(object):
             cur = 0
 
             while (cur < max_steps):
-                if (cur == math.floor(max_steps / 10.0)):
+                if (cur == math.floor(max_steps / 2.0)):
                     kernel = self.prg.set_fitness
                     kernel.set_scalar_arg_dtypes((None, np.float32))
                     kernel(self.queue, self.global_size, self.local_size, self.worlds, 0).wait()
