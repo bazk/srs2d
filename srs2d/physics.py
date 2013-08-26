@@ -33,7 +33,7 @@ NUM_ACTUATORS = 4
 NUM_HIDDEN = 3
 
 class Simulator(object):
-    def __init__(self, context, queue, num_worlds=1, num_robots=9, time_step=1/30.0, dynamics_iterations=4):
+    def __init__(self, context, queue, num_worlds=1, num_robots=9, time_step=1/10.0, dynamics_iterations=4):
         global NUM_INPUTS, NUM_OUTPUTS
 
         self.step_count = 0.0
@@ -135,7 +135,7 @@ class Simulator(object):
             cur = 0
 
             while (cur < max_steps):
-                if (cur == math.floor(max_steps / 2.0)):
+                if (cur == math.floor(max_steps / 10.0)):
                     kernel = self.prg.set_fitness
                     kernel.set_scalar_arg_dtypes((None, np.float32))
                     kernel(self.queue, self.global_size, self.local_size, self.worlds, 0).wait()

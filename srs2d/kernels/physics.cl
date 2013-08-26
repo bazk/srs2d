@@ -1,18 +1,18 @@
 #include <pyopencl-ranluxcl.cl>
 
-#define ROBOT_BODY_RADIUS           0.06
-#define WHEELS_MAX_ANGULAR_SPEED    12.565
-#define WHEELS_DISTANCE             0.0825
+#define ROBOT_BODY_RADIUS           0.035
+#define WHEELS_MAX_ANGULAR_SPEED    2.05
+#define WHEELS_DISTANCE             0.055
 #define WHEELS_RADIUS               0.02
-#define IR_RADIUS                   0.045 // from center of the robot
-#define CAMERA_RADIUS               0.60 // from center of the robot
+#define IR_RADIUS                   0.025
+#define CAMERA_RADIUS               0.35
 #define CAMERA_ANGLE                1.2566370614359172 // 72 degrees
-#define LED_PROTUBERANCE            0.02 // from outside border of the robot
-#define TARGET_AREAS_RADIUS         0.37
+#define LED_PROTUBERANCE            0.007
+#define TARGET_AREAS_RADIUS         0.32
 
-#define ARENA_HEIGHT    4.20
-#define ARENA_WIDTH_MIN 4.20
-#define ARENA_WIDTH_MAX 4.90
+#define ARENA_HEIGHT    2.5
+#define ARENA_WIDTH_MIN 2.5
+#define ARENA_WIDTH_MAX 2.9
 
 #define NUM_SENSORS    13
 #define NUM_ACTUATORS   4
@@ -520,7 +520,7 @@ __kernel void simulate(__global ranluxcl_state_t *ranluxcltab, __global world_t 
 
     while (cur < max_steps)
     {
-        if (cur == floor(max_steps / 2.0))
+        if (cur == floor(max_steps / 10.0))
             worlds[wid].robots[rid].fitness = 0;
 
         step_actuators(ranluxcltab, worlds);

@@ -38,8 +38,8 @@ ALFA = 2.0
 BETA = 2.0
 
 SIMULATION_DURATION = 600
-NUM_ROBOTS = 30
-D = [2.2, 2.5, 2.9, 3.3, 3.7]
+NUM_ROBOTS = 10
+D = [0.7, 0.9, 1.1, 1.3, 1.5]
 
 class PSO(object):
     def __init__(self):
