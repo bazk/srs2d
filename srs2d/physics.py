@@ -206,13 +206,16 @@ class ANNParametersArray(object):
             self.timec_hidden = np.zeros(NUM_HIDDEN, dtype=np.float32)
 
     def __str__(self):
-        return str({
+        return str(self.to_dict())
+
+    def to_dict(self):
+        return {
             'weights': [ x for x in self.weights.flat ],
             'bias': [ x for x in self.bias.flat ],
             'weights_hidden': [ x for x in self.weights_hidden.flat ],
             'bias_hidden': [ x for x in self.bias_hidden.flat ],
             'timec_hidden': [ x for x in self.timec_hidden.flat ]
-        })
+        }
 
     def copy(self):
         pv = ANNParametersArray()
