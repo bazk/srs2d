@@ -45,6 +45,10 @@ LOGGING = {
             'handlers': ['console'],
             'level': 'INFO'
         },
+        'physics': {
+            'handlers': ['console'],
+            'level': 'INFO'
+        },
         '__main__': {
             'handlers': ['console'],
             'level': 'INFO'
