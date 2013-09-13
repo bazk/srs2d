@@ -26,6 +26,10 @@ import math
 import numpy as np
 import pyopencl as cl
 import pyopencl.characterize
+import logging.config
+import logconfig
+
+logging.config.dictConfig(logconfig.LOGGING)
 
 __log__ = logging.getLogger(__name__)
 
@@ -70,8 +74,6 @@ class Simulator(object):
         else:
             self.local_size = (1, self.work_group_size)
             self.need_global_barrier = True
-
-        print self.global_size, self.local_size
 
         # create buffers
         self.worlds = cl.Buffer(context, 0, num_worlds * sizeof_world_t)
