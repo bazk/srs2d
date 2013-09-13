@@ -57,10 +57,10 @@ class Circle(object):
     def serialize(self, id):
         self.changed = False
         res = ''
-        res += struct.pack('<cHc', OP_TYPE, id, TYPE_CIRCLE)
-        res += struct.pack('<cHff', OP_POS, id, self.x, self.y)
-        res += struct.pack('<cHf', OP_RADIUS, id, self.radius)
-        res += struct.pack('<cHff', OP_ORIENTATION, id, self.sin, self.cos)
+        res += struct.pack('>cHc', OP_TYPE, id, TYPE_CIRCLE)
+        res += struct.pack('>cHff', OP_POS, id, self.x, self.y)
+        res += struct.pack('>cHf', OP_RADIUS, id, self.radius)
+        res += struct.pack('>cHff', OP_ORIENTATION, id, self.sin, self.cos)
         return res
 
 class Square(object):
@@ -84,9 +84,9 @@ class Square(object):
     def serialize(self, id):
         self.changed = False
         res = ''
-        res += struct.pack('<cHc', OP_TYPE, id, TYPE_SQUARE)
-        res += struct.pack('<cHff', OP_POS, id, self.x, self.y)
-        res += struct.pack('<cHff', OP_SIZE, id, self.width, self.height)
+        res += struct.pack('>cHc', OP_TYPE, id, TYPE_SQUARE)
+        res += struct.pack('>cHff', OP_POS, id, self.x, self.y)
+        res += struct.pack('>cHff', OP_SIZE, id, self.width, self.height)
         return res
 
 class SaveFile(object):
@@ -162,16 +162,16 @@ class SaveFile(object):
         self.offset = 0
         self.current_step = 0
         self.keystep_counter = 0
-        self._write(struct.pack('<cccBB', 'S', 'R', 'S', self.version, self.step_rate), escape=False)
+        self._write(struct.pack('>cccBB', 'S', 'R', 'S', self.version, self.step_rate), escape=False)
 
     def _insert_keystep(self):
-        self._write(struct.pack('<cc', '\xFF', '\xF0'), escape=False)
+        self._write(struct.pack('>cc', '\xFF', '\xF0'), escape=False)
         self._insert_stepdef()
 
     def _insert_step(self):
-        self._write(struct.pack('<cc', '\xFF', '\xF1'), escape=False)
+        self._write(struct.pack('>cc', '\xFF', '\xF1'), escape=False)
         self._insert_stepdef()
 
     def _insert_stepdef(self):
-        self._write(struct.pack('<I', self.current_step))
+        self._write(struct.pack('>I', self.current_step))
         self.current_step += 1
