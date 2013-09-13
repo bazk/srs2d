@@ -511,17 +511,19 @@ __kernel void step_robots(__global ranluxcl_state_t *ranluxcltab, __global world
     step_controllers(ranluxcltab, worlds);
 }
 
-__kernel void simulate(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds, float seconds)
+__kernel void simulate(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds, int ta, int tb)
 {
     int wid = get_global_id(0);
     int rid = get_global_id(1);
 
-    unsigned int i, cur = 0, max_steps = ceil(seconds / TIME_STEP);
+    unsigned int i, cur = 0;
 
-    while (cur < max_steps)
+    while (cur < (ta + tb))
     {
-        if (cur == floor(max_steps / 10.0))
+        if (cur == ta) {
             worlds[wid].robots[rid].fitness = 0;
+            worlds[wid].robots[rid].energy = 2;
+        }
 
         step_actuators(ranluxcltab, worlds);
 
@@ -571,4 +573,12 @@ __kernel void set_fitness(__global world_t *worlds, float fitness)
     int rid = get_global_id(1);
 
     worlds[wid].robots[rid].fitness = fitness;
+}
+
+__kernel void set_energy(__global world_t *worlds, float energy)
+{
+    int wid = get_global_id(0);
+    int rid = get_global_id(1);
+
+    worlds[wid].robots[rid].energy = energy;
 }

@@ -37,7 +37,8 @@ W = 0.9
 ALFA = 2.0
 BETA = 2.0
 
-SIMULATION_DURATION = 600
+STEPS_TA = 18600
+STEPS_TB = 5400
 NUM_ROBOTS = 10
 D = [0.7, 0.9, 1.1, 1.3, 1.5]
 
@@ -81,7 +82,7 @@ class PSO(object):
             for d in D:
                 for i in range(3):
                     self.simulator.init_worlds(d)
-                    self.simulator.simulate(SIMULATION_DURATION)
+                    self.simulator.simulate(STEPS_TA, STEPS_TB)
 
                     fit = self.simulator.get_fitness()
                     for p in range(len(self.particles)):

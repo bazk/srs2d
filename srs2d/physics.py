@@ -127,21 +127,23 @@ class Simulator(object):
         self.step_count += 1
         self.clock += self.time_step
 
-    def simulate(self, seconds):
+    def simulate(self, ta, tb):
         if not self.need_global_barrier:
             kernel = self.prg.simulate
-            kernel.set_scalar_arg_dtypes((None, None, np.float32))
-            kernel(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds, seconds).wait()
+            kernel.set_scalar_arg_dtypes((None, None, np.int32, np.int32))
+            kernel(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds, ta, tb).wait()
 
         else:
-            max_steps = math.ceil(seconds / self.time_step)
             cur = 0
-
-            while (cur < max_steps):
-                if (cur == math.floor(max_steps / 2.0)):
+            while (cur < (ta+tb)):
+                if (cur == ta):
                     kernel = self.prg.set_fitness
                     kernel.set_scalar_arg_dtypes((None, np.float32))
                     kernel(self.queue, self.global_size, self.local_size, self.worlds, 0).wait()
+
+                    kernel = self.prg.set_energy
+                    kernel.set_scalar_arg_dtypes((None, np.float32))
+                    kernel(self.queue, self.global_size, self.local_size, self.worlds, 2).wait()
 
                 self.prg.step_actuators(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds)
 
