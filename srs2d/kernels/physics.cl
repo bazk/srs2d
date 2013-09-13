@@ -185,8 +185,8 @@ __kernel void set_random_position(__global ranluxcl_state_t *ranluxcltab, __glob
     {
         float4 random = ranluxcl32(&ranluxclstate);
 
-        worlds[wid].robots[rid].transform.pos.x = random.s0 * 4 - 2;
-        worlds[wid].robots[rid].transform.pos.y = random.s1 * 4 - 2;
+        worlds[wid].robots[rid].transform.pos.x = (random.s0 * 2 * (ARENA_WIDTH_MIN-ROBOT_BODY_RADIUS)) - (ARENA_WIDTH_MIN-ROBOT_BODY_RADIUS);
+        worlds[wid].robots[rid].transform.pos.y = (random.s1 * 2 * (ARENA_HEIGHT-ROBOT_BODY_RADIUS)) - (ARENA_HEIGHT-ROBOT_BODY_RADIUS);
         worlds[wid].robots[rid].transform.rot.sin = random.s2 * 2 - 1;
         worlds[wid].robots[rid].transform.rot.cos = random.s3 * 2 - 1;
 
