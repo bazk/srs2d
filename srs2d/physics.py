@@ -157,12 +157,31 @@ class Simulator(object):
 
                 cur += 1
 
+    def get_world_transforms(self):
+        arena = np.zeros(self.num_worlds, dtype=np.dtype((np.float32, (2,))))
+        target_areas = np.zeros(self.num_worlds, dtype=np.dtype((np.float32, (4,))))
+        target_areas_radius = np.zeros(self.num_worlds, dtype=np.dtype((np.float32, (2,))))
+
+        arena_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=arena)
+        target_areas_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=target_areas)
+        target_areas_radius_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=target_areas_radius)
+
+        self.prg.get_world_transforms(self.queue, (self.num_worlds,), None, self.worlds, arena_buf, target_areas_buf, target_areas_radius_buf).wait()
+
+        cl.enqueue_copy(self.queue, arena, arena_buf)
+        cl.enqueue_copy(self.queue, target_areas, target_areas_buf)
+        cl.enqueue_copy(self.queue, target_areas_radius, target_areas_radius_buf)
+        return (arena, target_areas, target_areas_radius)
+
     def get_transforms(self):
         transforms = np.zeros(self.num_worlds * self.num_robots, dtype=np.dtype((np.float32, (4,))))
+        radius = np.zeros(self.num_worlds * self.num_robots, dtype=np.dtype((np.float32, (1,))))
         trans_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=transforms)
-        self.prg.get_transform_matrices(self.queue, self.global_size, self.local_size, self.worlds, trans_buf).wait()
+        radius_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=radius)
+        self.prg.get_transform_matrices(self.queue, self.global_size, self.local_size, self.worlds, trans_buf, radius_buf).wait()
         cl.enqueue_copy(self.queue, transforms, trans_buf)
-        return transforms
+        cl.enqueue_copy(self.queue, radius, radius_buf)
+        return transforms, radius
 
     def set_ann_parameters(self, world, parameters):
         self.weights[world*NUM_ACTUATORS*(NUM_SENSORS+NUM_HIDDEN):(world+1)*NUM_ACTUATORS*(NUM_SENSORS+NUM_HIDDEN)] = parameters.weights

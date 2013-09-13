@@ -392,7 +392,7 @@ class Simulation(object):
 
         simulator.step()
 
-        transforms = simulator.get_transforms()
+        transforms, radius = simulator.get_transforms()
         fitness = simulator.get_fitness()[0]
         clock = simulator.clock
 

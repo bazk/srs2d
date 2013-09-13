@@ -542,7 +542,7 @@ __kernel void simulate(__global ranluxcl_state_t *ranluxcltab, __global world_t 
     // worlds[wid].robots[rid].fitness += worlds[wid].robots[rid].energy;
 }
 
-__kernel void get_transform_matrices(__global world_t *worlds, __global float4 *transforms)
+__kernel void get_transform_matrices(__global world_t *worlds, __global float4 *transforms, __global float *radius)
 {
     int wid = get_global_id(0);
     int rid = get_global_id(1);
@@ -551,8 +551,24 @@ __kernel void get_transform_matrices(__global world_t *worlds, __global float4 *
     transforms[wid*ROBOTS_PER_WORLD+rid].s1 = worlds[wid].robots[rid].transform.pos.y;
     transforms[wid*ROBOTS_PER_WORLD+rid].s2 = worlds[wid].robots[rid].transform.rot.sin;
     transforms[wid*ROBOTS_PER_WORLD+rid].s3 = worlds[wid].robots[rid].transform.rot.cos;
+    radius[wid*ROBOTS_PER_WORLD+rid] = ROBOT_BODY_RADIUS;
 }
 
+__kernel void get_world_transforms(__global world_t *worlds, __global float2 *arena, __global float4 *target_areas, __global float2 *target_areas_radius)
+{
+    int wid = get_global_id(0);
+
+    arena[wid].s0 = worlds[wid].arena_width;
+    arena[wid].s1 = worlds[wid].arena_height;
+
+    target_areas[wid].s0 = worlds[wid].target_areas[0].center.x;
+    target_areas[wid].s1 = worlds[wid].target_areas[0].center.y;
+    target_areas[wid].s2 = worlds[wid].target_areas[1].center.x;
+    target_areas[wid].s3 = worlds[wid].target_areas[1].center.y;
+
+    target_areas_radius[wid].s0 = worlds[wid].target_areas[0].radius;
+    target_areas_radius[wid].s1 = worlds[wid].target_areas[1].radius;
+}
 
 __kernel void get_fitness(__global world_t *worlds, __global float *fitness)
 {
