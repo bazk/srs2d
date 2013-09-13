@@ -24,6 +24,7 @@ import physics
 import pyopencl as cl
 import logging.config
 import logconfig
+import solace
 
 logging.config.dictConfig(logconfig.LOGGING)
 
@@ -39,7 +40,12 @@ BETA = 2.0
 
 STEPS_TA = 18600
 STEPS_TB = 5400
+
+NUM_GENERATIONS = 1000
+NUM_RUNS = 1
 NUM_ROBOTS = 10
+POPULATION_SIZE = 120
+
 D = [0.7, 0.9, 1.1, 1.3, 1.5]
 
 class PSO(object):
@@ -48,27 +54,16 @@ class PSO(object):
         self.gbest_fitness = None
         self.particles = []
 
-    def run(self, population_size=40, max_generations=2000):
-        context = cl.create_some_context()
-        queue = cl.CommandQueue(context)
-
+    def execute(self, run, context, queue):
         __log__.info(' PSO Starting...')
         __log__.info('=' * 80)
-        __log__.info(' population_size = %d', population_size)
-        __log__.info(' max_generations = %d', max_generations)
-        __log__.info(' NUM_ROBOTS = %d', NUM_ROBOTS)
-        __log__.info(' SIMULATION_DURATION = %d', SIMULATION_DURATION)
-        __log__.info(' W = %f', W)
-        __log__.info(' ALFA = %f', ALFA)
-        __log__.info(' BETA = %f', BETA)
-        __log__.info('=' * 80)
 
-        self.particles = [ Particle() for i in range(population_size) ]
-        self.simulator = physics.Simulator(context, queue, num_worlds=population_size, num_robots=NUM_ROBOTS)
+        self.particles = [ Particle() for i in range(POPULATION_SIZE) ]
+        self.simulator = physics.Simulator(context, queue, num_worlds=POPULATION_SIZE, num_robots=NUM_ROBOTS)
 
         generation = 0
 
-        while (generation < max_generations):
+        while (generation < NUM_GENERATIONS):
             __log__.info('Calculating fitness for each particle...')
 
             for p in range(len(self.particles)):
@@ -100,16 +95,20 @@ class PSO(object):
 
                     __log__.info('Found new gbest: %s', str(self.gbest))
 
+            generation += 1
+
             __log__.info('-' * 80)
             __log__.info('[gen=%d] CURRENT GBEST IS: %s', generation, str(self.gbest))
             __log__.info(str(self.gbest.position))
             __log__.info('-' * 80)
 
+            run.progress(generation / float(NUM_GENERATIONS), {'gbest_fitness': self.gbest.fitness, 'gbest_position': self.gbest.position.to_dict()})
+
             for p in self.particles:
                 p.gbest = self.gbest
                 p.update_pos_vel()
 
-            generation += 1
+        run.done({'gbest_fitness': self.gbest.fitness, 'gbest_position': self.gbest.position.to_dict()})
 
 class Particle(object):
     def __init__(self):
@@ -150,4 +149,25 @@ class Particle(object):
         self.position = self.position + self.velocity
 
 if __name__=="__main__":
-    PSO().run()
+    context = cl.create_some_context()
+    queue = cl.CommandQueue(context)
+
+    exp = solace.get_experiment('solace://lys:3000/2', 'admin', '123456')
+    inst = exp.create_instance(NUM_RUNS, {
+        'NUM_SENSORS': NUM_SENSORS,
+        'NUM_ACTUATORS': NUM_ACTUATORS,
+        'NUM_HIDDEN': NUM_HIDDEN,
+        'W': W,
+        'ALFA': ALFA,
+        'BETA': BETA,
+        'STEPS_TA': STEPS_TA,
+        'STEPS_TB': STEPS_TB,
+        'NUM_GENERATIONS': NUM_GENERATIONS,
+        'NUM_RUNS': NUM_RUNS,
+        'NUM_ROBOTS': NUM_ROBOTS,
+        'POPULATION_SIZE': POPULATION_SIZE,
+        'D': D
+    })
+
+    for run in inst.runs:
+        PSO().execute(run, context, queue)
