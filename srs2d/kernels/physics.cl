@@ -79,6 +79,8 @@ typedef struct {
     float arena_height;
     float arena_width;
 
+    float targets_distance;
+
     target_area_t target_areas[2];
 
     // ANN parameters
@@ -185,8 +187,10 @@ __kernel void set_random_position(__global ranluxcl_state_t *ranluxcltab, __glob
     {
         float4 random = ranluxcl32(&ranluxclstate);
 
-        worlds[wid].robots[rid].transform.pos.x = (random.s0 * 2 * (ARENA_WIDTH_MIN-ROBOT_BODY_RADIUS)) - (ARENA_WIDTH_MIN-ROBOT_BODY_RADIUS);
-        worlds[wid].robots[rid].transform.pos.y = (random.s1 * 2 * (ARENA_HEIGHT-ROBOT_BODY_RADIUS)) - (ARENA_HEIGHT-ROBOT_BODY_RADIUS);
+        float max_x = (worlds[wid].arena_width / 2) - ROBOT_BODY_RADIUS;
+        float max_y = (worlds[wid].arena_height / 2) - ROBOT_BODY_RADIUS;
+        worlds[wid].robots[rid].transform.pos.x = (random.s0 * 2 * max_x) - max_x;
+        worlds[wid].robots[rid].transform.pos.y = (random.s1 * 2 * max_y) - max_y;
         worlds[wid].robots[rid].transform.rot.sin = random.s2 * 2 - 1;
         worlds[wid].robots[rid].transform.rot.cos = random.s3 * 2 - 1;
 
@@ -236,6 +240,8 @@ __kernel void init_worlds(__global ranluxcl_state_t *ranluxcltab, __global world
     ranluxcl_download_seed(&ranluxclstate, ranluxcltab);
     float4 random = ranluxcl32(&ranluxclstate);
     ranluxcl_upload_seed(&ranluxclstate, ranluxcltab);
+
+    worlds[wid].targets_distance = targets_distance;
 
     // k = number of time steps needed for a robot to consume one unit of energy while moving at maximum speed
     worlds[wid].k = (targets_distance / (2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS)) / TIME_STEP;
@@ -468,6 +474,8 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
         }
     }
 
+    worlds[wid].robots[rid].sensors[IN_ground] = 0;
+
     for (i = 0; i < 2; i++)
     {
         float dist = distance(worlds[wid].robots[rid].transform.pos, worlds[wid].target_areas[i].center);
@@ -482,17 +490,13 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
                 worlds[wid].robots[rid].energy = 2;
                 worlds[wid].robots[rid].last_target_area = i;
             }
-            else
-                worlds[wid].robots[rid].energy -= (fabs(worlds[wid].robots[rid].wheels_angular_speed.s0) + fabs(worlds[wid].robots[rid].wheels_angular_speed.s1) /
-                                                                                (2 * worlds[wid].k * WHEELS_MAX_ANGULAR_SPEED));
-        }
-        else
-        {
-            worlds[wid].robots[rid].sensors[IN_ground] = 0;
-            worlds[wid].robots[rid].energy -= (fabs(worlds[wid].robots[rid].wheels_angular_speed.s0) + fabs(worlds[wid].robots[rid].wheels_angular_speed.s1) /
-                                                                            (2 * worlds[wid].k * WHEELS_MAX_ANGULAR_SPEED));
         }
     }
+
+    worlds[wid].robots[rid].energy -= (fabs(worlds[wid].robots[rid].wheels_angular_speed.s0) + fabs(worlds[wid].robots[rid].wheels_angular_speed.s1) /
+                                                                        (2 * worlds[wid].k * WHEELS_MAX_ANGULAR_SPEED));
+    if (worlds[wid].robots[rid].energy < 0)
+        worlds[wid].robots[rid].energy = 0;
 }
 
 __kernel void step_robots(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
@@ -539,7 +543,7 @@ __kernel void simulate(__global ranluxcl_state_t *ranluxcltab, __global world_t 
         cur += 1;
     }
 
-    // worlds[wid].robots[rid].fitness += worlds[wid].robots[rid].energy;
+    worlds[wid].robots[rid].fitness /= ((2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS) * tb * TIME_STEP) / worlds[wid].targets_distance;
 }
 
 __kernel void get_transform_matrices(__global world_t *worlds, __global float4 *transforms, __global float *radius)
