@@ -25,6 +25,7 @@ import pyopencl as cl
 import logging.config
 import logconfig
 import solace
+import io
 
 logging.config.dictConfig(logconfig.LOGGING)
 
@@ -49,17 +50,21 @@ POPULATION_SIZE = 120
 D = [0.7, 0.9, 1.1, 1.3, 1.5]
 
 class PSO(object):
-    def __init__(self):
+    def __init__(self, context, queue):
         self.gbest = None
         self.gbest_fitness = None
         self.particles = []
+        self.context = context
+        self.queue = queue
 
-    def execute(self, run, context, queue):
+    def execute(self, run):
         __log__.info(' PSO Starting...')
         __log__.info('=' * 80)
 
+        run.begin()
+
         self.particles = [ Particle() for i in range(POPULATION_SIZE) ]
-        self.simulator = physics.Simulator(context, queue, num_worlds=POPULATION_SIZE, num_robots=NUM_ROBOTS)
+        self.simulator = physics.Simulator(self.context, self.queue, num_worlds=POPULATION_SIZE, num_robots=NUM_ROBOTS)
 
         generation = 0
 
@@ -89,11 +94,17 @@ class PSO(object):
             for p in self.particles:
                 p.update_pbest()
 
+            new_gbest = False
             for p in self.particles:
                 if (self.gbest is None) or (p.pbest.fitness > self.gbest.fitness):
                     self.gbest = p.pbest.copy()
-
                     __log__.info('Found new gbest: %s', str(self.gbest))
+                    new_gbest = True
+
+            if new_gbest:
+                __log__.info('Saving simulation for the new found gbest...')
+                self.simulate_and_save('/tmp/simulation.srs', self.gbest.position, D[3])
+                run.upload('/tmp/simulation.srs')
 
             generation += 1
 
@@ -109,6 +120,39 @@ class PSO(object):
                 p.update_pos_vel()
 
         run.done({'gbest_fitness': self.gbest.fitness, 'gbest_position': self.gbest.position.to_dict()})
+
+    def simulate_and_save(self, filename, pos, distance):
+        simulator = physics.Simulator(self.context, self.queue, num_worlds=1, num_robots=NUM_ROBOTS)
+
+        save = io.SaveFile.new(filename, step_rate=1/float(simulator.time_step))
+
+        simulator.set_ann_parameters(0, pos)
+        simulator.commit_ann_parameters()
+        simulator.init_worlds(distance)
+
+        arena, target_areas, target_areas_radius = simulator.get_world_transforms()
+        save.add_square(.0, .0, arena[0][0], arena[0][1])
+        save.add_circle(target_areas[0][0], target_areas[0][1], target_areas_radius[0][0], .0, .1)
+        save.add_circle(target_areas[0][2], target_areas[0][3], target_areas_radius[0][1], .0, .1)
+
+        transforms, radius = simulator.get_transforms()
+        robot_radius = radius[0][0]
+
+        robot_obj = [ None for i in range(len(transforms)) ]
+        for i in range(len(transforms)):
+            robot_obj[i] = save.add_circle(transforms[i][0], transforms[i][1], robot_radius, transforms[i][2], transforms[i][3])
+
+        max_steps = STEPS_TA + STEPS_TB
+        current_step = 0
+        while current_step < max_steps:
+            simulator.step()
+            transforms, radius = simulator.get_transforms()
+            for i in range(len(transforms)):
+                robot_obj[i].update(transforms[i][0], transforms[i][1], robot_radius, transforms[i][2], transforms[i][3])
+            save.frame()
+            current_step += 1
+
+        save.close()
 
 class Particle(object):
     def __init__(self):
@@ -152,7 +196,7 @@ if __name__=="__main__":
     context = cl.create_some_context()
     queue = cl.CommandQueue(context)
 
-    exp = solace.get_experiment('solace://lys:3000/2', 'admin', '123456')
+    exp = solace.get_experiment('solace://lys:3000/swarm-ann-pso', 'user', '123456')
     inst = exp.create_instance(NUM_RUNS, {
         'NUM_SENSORS': NUM_SENSORS,
         'NUM_ACTUATORS': NUM_ACTUATORS,
@@ -170,4 +214,4 @@ if __name__=="__main__":
     })
 
     for run in inst.runs:
-        PSO().execute(run, context, queue)
+        PSO(context, queue).execute(run)
