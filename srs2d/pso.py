@@ -18,6 +18,7 @@
 __author__ = "Eduardo L. Buratti <eburatti09@gmail.com>"
 __date__ = "04 Jul 2013"
 
+import os
 import random
 import logging
 import physics
@@ -199,10 +200,17 @@ class Particle(object):
         self.position = self.position + self.velocity
 
 if __name__=="__main__":
+    uri = os.environ.get('SOLACE_URI')
+    username = os.environ.get('SOLACE_USERNAME')
+    password = os.environ.get('SOLACE_PASSWORD')
+
+    if (uri is None) or (username is None) or (password is None):
+        raise Exception('Environment variables (SOLACE_URI, SOLACE_USERNAME, SOLACE_PASSWORD) not set!')
+
     context = cl.create_some_context()
     queue = cl.CommandQueue(context)
 
-    exp = solace.get_experiment('solace://lys:3000/swarm-ann-pso', 'user', '123456')
+    exp = solace.get_experiment(uri, username, password)
     inst = exp.create_instance(NUM_RUNS, {
         'NUM_SENSORS': NUM_SENSORS,
         'NUM_ACTUATORS': NUM_ACTUATORS,
