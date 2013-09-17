@@ -104,11 +104,6 @@ class PSO(object):
                     __log__.info('Found new gbest: %s', str(self.gbest))
                     new_gbest = True
 
-            if new_gbest:
-                __log__.info('Saving simulation for the new found gbest...')
-                self.simulate_and_save('/tmp/simulation.srs', self.gbest.position, D[3])
-                run.upload('/tmp/simulation.srs')
-
             generation += 1
 
             __log__.info('-' * 80)
@@ -117,6 +112,11 @@ class PSO(object):
             __log__.info('-' * 80)
 
             run.progress(generation / float(NUM_GENERATIONS), {'gbest_fitness': self.gbest.fitness, 'gbest_position': self.gbest.position.to_dict()})
+
+            if new_gbest:
+                __log__.info('Saving simulation for the new found gbest...')
+                self.simulate_and_save('/tmp/simulation.srs', self.gbest.position, D[3])
+                run.upload('/tmp/simulation.srs', 'run-%d-new-gbest-gen-%d.srs' % (run.id, generation) )
 
             for p in self.particles:
                 p.gbest = self.gbest
