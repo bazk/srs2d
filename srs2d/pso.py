@@ -18,6 +18,7 @@
 __author__ = "Eduardo L. Buratti <eburatti09@gmail.com>"
 __date__ = "04 Jul 2013"
 
+import os
 import random
 import logging
 import physics
@@ -85,7 +86,7 @@ class PSO(object):
             for d in D:
                 for i in range(3):
                     self.simulator.init_worlds(d)
-                    self.simulator.simulate(STEPS_TA, STEPS_TB)
+                    self.simulator.simulate()
 
                     fit = self.simulator.get_fitness()
                     for p in range(len(self.particles)):
@@ -104,11 +105,6 @@ class PSO(object):
                     __log__.info('Found new gbest: %s', str(self.gbest))
                     new_gbest = True
 
-            if new_gbest:
-                __log__.info('Saving simulation for the new found gbest...')
-                self.simulate_and_save('/tmp/simulation.srs', self.gbest.position, D[3])
-                run.upload('/tmp/simulation.srs')
-
             generation += 1
 
             __log__.info('-' * 80)
@@ -117,6 +113,11 @@ class PSO(object):
             __log__.info('-' * 80)
 
             run.progress(generation / float(NUM_GENERATIONS), {'gbest_fitness': self.gbest.fitness, 'gbest_position': self.gbest.position.to_dict()})
+
+            if new_gbest:
+                __log__.info('Saving simulation for the new found gbest...')
+                self.simulate_and_save('/tmp/simulation.srs', self.gbest.position, D[3])
+                run.upload('/tmp/simulation.srs', 'run-%d-new-gbest-gen-%d.srs' % (run.id, generation) )
 
             for p in self.particles:
                 p.gbest = self.gbest
@@ -199,10 +200,17 @@ class Particle(object):
         self.position = self.position + self.velocity
 
 if __name__=="__main__":
+    uri = os.environ.get('SOLACE_URI')
+    username = os.environ.get('SOLACE_USERNAME')
+    password = os.environ.get('SOLACE_PASSWORD')
+
+    if (uri is None) or (username is None) or (password is None):
+        raise Exception('Environment variables (SOLACE_URI, SOLACE_USERNAME, SOLACE_PASSWORD) not set!')
+
     context = cl.create_some_context()
     queue = cl.CommandQueue(context)
 
-    exp = solace.get_experiment('solace://lys:3000/swarm-ann-pso', 'user', '123456')
+    exp = solace.get_experiment(uri, username, password)
     inst = exp.create_instance(NUM_RUNS, {
         'NUM_SENSORS': NUM_SENSORS,
         'NUM_ACTUATORS': NUM_ACTUATORS,
