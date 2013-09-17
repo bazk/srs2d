@@ -31,7 +31,7 @@ class TestSimulator(object):
         context = cl.create_some_context()
         queue = cl.CommandQueue(context)
 
-        simulator = physics.Simulator(context, queue, num_worlds=1, num_robots=NUM_ROBOTS)
+        simulator = physics.Simulator(context, queue, num_worlds=1, num_robots=NUM_ROBOTS, ta=600, tb=5400)
 
         save = io.SaveFile.new('/tmp/test.srs', step_rate=1/float(simulator.time_step))
 
@@ -52,15 +52,24 @@ class TestSimulator(object):
         for i in range(len(transforms)):
             robot_obj[i] = save.add_circle(transforms[i][0], transforms[i][1], robot_radius, transforms[i][2], transforms[i][3])
 
-        max_steps = 600
-        current_step = 0
-        while current_step < max_steps:
+        ta = 600
+        tb = 5400
+        cur = 0
+        while (cur < (ta+tb)):
+            if (cur == ta):
+                simulator.set_fitness(0)
+                simulator.set_energy(2)
+
             simulator.step()
+
             transforms, radius = simulator.get_transforms()
             for i in range(len(transforms)):
                 robot_obj[i].update(transforms[i][0], transforms[i][1], robot_radius, transforms[i][2], transforms[i][3])
             save.frame()
-            current_step += 1
+
+            cur += 1
+
+        print 'fitness = ', simulator.get_fitness()[0]
 
         save.close()
 

@@ -38,7 +38,7 @@ NUM_ACTUATORS = 4
 NUM_HIDDEN = 3
 
 class Simulator(object):
-    def __init__(self, context, queue, num_worlds=1, num_robots=9, time_step=1/10.0, dynamics_iterations=4):
+    def __init__(self, context, queue, num_worlds=1, num_robots=9, ta=600, tb=5400, time_step=1/10.0, dynamics_iterations=4):
         global NUM_INPUTS, NUM_OUTPUTS
 
         self.step_count = 0.0
@@ -49,10 +49,12 @@ class Simulator(object):
 
         self.num_worlds = num_worlds
         self.num_robots = num_robots
+        self.ta = ta
+        self.tb = tb
         self.time_step = time_step
         self.dynamics_iterations = dynamics_iterations
 
-        options = '-DROBOTS_PER_WORLD=%d -DTIME_STEP=%f -DDYNAMICS_ITERATIONS=%d' % (num_robots, time_step, dynamics_iterations)
+        options = '-DROBOTS_PER_WORLD=%d -DTIME_STEP=%f -DTA=%f -DTB=%f -DDYNAMICS_ITERATIONS=%d' % (num_robots, time_step, ta, tb, dynamics_iterations)
 
         src = open(os.path.join(os.path.dirname(__file__), 'kernels/physics.cl'), 'r')
         self.prg = cl.Program(context, src.read()).build(options=options)
@@ -127,16 +129,14 @@ class Simulator(object):
         self.step_count += 1
         self.clock += self.time_step
 
-    def simulate(self, ta, tb):
+    def simulate(self):
         if not self.need_global_barrier:
-            kernel = self.prg.simulate
-            kernel.set_scalar_arg_dtypes((None, None, np.int32, np.int32))
-            kernel(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds, ta, tb).wait()
+            self.prg.simulate(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
 
         else:
             cur = 0
-            while (cur < (ta+tb)):
-                if (cur == ta):
+            while (cur < (self.ta+self.tb)):
+                if (cur == self.ta):
                     kernel = self.prg.set_fitness
                     kernel.set_scalar_arg_dtypes((None, np.float32))
                     kernel(self.queue, self.global_size, self.local_size, self.worlds, 0).wait()
@@ -207,6 +207,16 @@ class Simulator(object):
         self.prg.get_fitness(self.queue, (self.num_worlds,), None, self.worlds, fitness_buf).wait()
         cl.enqueue_copy(self.queue, fitness, fitness_buf)
         return fitness
+
+    def set_fitness(self, fitness):
+        kernel = self.prg.set_fitness
+        kernel.set_scalar_arg_dtypes((None, np.float32))
+        kernel(self.queue, self.global_size, self.local_size, self.worlds, fitness).wait()
+
+    def set_energy(self, energy):
+        kernel = self.prg.set_energy
+        kernel.set_scalar_arg_dtypes((None, np.float32))
+        kernel(self.queue, self.global_size, self.local_size, self.worlds, energy).wait()
 
 class ANNParametersArray(object):
     def __init__(self, randomize=False, weights_boundary=(-5.0, 5.0), bias_boundary=(-5.0, 5.0), timec_boundary=(0, 1.0)):
