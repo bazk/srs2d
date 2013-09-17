@@ -64,7 +64,10 @@ class PSO(object):
         run.begin()
 
         self.particles = [ Particle() for i in range(POPULATION_SIZE) ]
-        self.simulator = physics.Simulator(self.context, self.queue, num_worlds=POPULATION_SIZE, num_robots=NUM_ROBOTS)
+        self.simulator = physics.Simulator(self.context, self.queue,
+                                           num_worlds=POPULATION_SIZE,
+                                           num_robots=NUM_ROBOTS,
+                                           ta=STEPS_TA, tb=STEPS_TB)
 
         generation = 0
 
@@ -82,7 +85,7 @@ class PSO(object):
             for d in D:
                 for i in range(3):
                     self.simulator.init_worlds(d)
-                    self.simulator.simulate(STEPS_TA, STEPS_TB)
+                    self.simulator.simulate()
 
                     fit = self.simulator.get_fitness()
                     for p in range(len(self.particles)):
@@ -122,7 +125,10 @@ class PSO(object):
         run.done({'gbest_fitness': self.gbest.fitness, 'gbest_position': self.gbest.position.to_dict()})
 
     def simulate_and_save(self, filename, pos, distance):
-        simulator = physics.Simulator(self.context, self.queue, num_worlds=1, num_robots=NUM_ROBOTS)
+        simulator = physics.Simulator(self.context, self.queue,
+                                      num_worlds=1,
+                                      num_robots=NUM_ROBOTS,
+                                      ta=STEPS_TA, tb=STEPS_TB)
 
         save = io.SaveFile.new(filename, step_rate=1/float(simulator.time_step))
 

@@ -1,5 +1,7 @@
 #include <pyopencl-ranluxcl.cl>
 
+#pragma OPENCL EXTENSION cl_amd_printf : enable
+
 #define ROBOT_BODY_RADIUS           0.035
 #define WHEELS_MAX_ANGULAR_SPEED    2.05
 #define WHEELS_DISTANCE             0.055
@@ -515,16 +517,16 @@ __kernel void step_robots(__global ranluxcl_state_t *ranluxcltab, __global world
     step_controllers(ranluxcltab, worlds);
 }
 
-__kernel void simulate(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds, int ta, int tb)
+__kernel void simulate(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
 {
     int wid = get_global_id(0);
     int rid = get_global_id(1);
 
     unsigned int i, cur = 0;
 
-    while (cur < (ta + tb))
+    while (cur < (TA + TB))
     {
-        if (cur == ta) {
+        if (cur == TA) {
             worlds[wid].robots[rid].fitness = 0;
             worlds[wid].robots[rid].energy = 2;
         }
@@ -542,8 +544,6 @@ __kernel void simulate(__global ranluxcl_state_t *ranluxcltab, __global world_t 
 
         cur += 1;
     }
-
-    worlds[wid].robots[rid].fitness /= ((2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS) * tb * TIME_STEP) / worlds[wid].targets_distance;
 }
 
 __kernel void get_transform_matrices(__global world_t *worlds, __global float4 *transforms, __global float *radius)
@@ -579,10 +579,12 @@ __kernel void get_fitness(__global world_t *worlds, __global float *fitness)
     int wid = get_global_id(0);
     int rid;
 
+    float max_trips = ((2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS) * TB * TIME_STEP) / worlds[wid].targets_distance;
+
     float avg_fitness = 0;
 
     for (rid = 0; rid < ROBOTS_PER_WORLD; rid++)
-        avg_fitness += worlds[wid].robots[rid].fitness;
+        avg_fitness += worlds[wid].robots[rid].fitness / max_trips;
 
     fitness[wid] = avg_fitness / ROBOTS_PER_WORLD;
 }
