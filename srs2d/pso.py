@@ -112,18 +112,18 @@ class PSO(object):
             __log__.info(str(self.gbest.position))
             __log__.info('-' * 80)
 
-            run.progress(generation / float(NUM_GENERATIONS), {'gbest_fitness': self.gbest.fitness, 'gbest_position': self.gbest.position.to_dict()})
+            run.progress(generation / float(NUM_GENERATIONS), {'generation': generation, 'gbest_fitness': self.gbest.fitness, 'gbest_position': self.gbest.position.to_dict()})
 
             if new_gbest:
                 __log__.info('Saving simulation for the new found gbest...')
-                self.simulate_and_save('/tmp/simulation.srs', self.gbest.position, D[3])
-                run.upload('/tmp/simulation.srs', 'run-%d-new-gbest-gen-%d.srs' % (run.id, generation) )
+                self.simulate_and_save('/tmp/simulation.srs', self.gbest.position, D[ random.randint(0, len(D)-1) ])
+                run.upload('/tmp/simulation.srs', 'run-%02d-new-gbest-gen-%04d.srs' % (run.id, generation) )
 
             for p in self.particles:
                 p.gbest = self.gbest
                 p.update_pos_vel()
 
-        run.done({'gbest_fitness': self.gbest.fitness, 'gbest_position': self.gbest.position.to_dict()})
+        run.done({'generation': generation, 'gbest_fitness': self.gbest.fitness, 'gbest_position': self.gbest.position.to_dict()})
 
     def simulate_and_save(self, filename, pos, distance):
         simulator = physics.Simulator(self.context, self.queue,
