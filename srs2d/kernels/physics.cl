@@ -399,6 +399,8 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
          ((worlds[wid].robots[rid].transform.pos.y-ROBOT_BODY_RADIUS) < (-worlds[wid].arena_height/2)) )
     {
         set_random_position(ranluxcltab, worlds);
+        worlds[wid].robots[rid].energy = 0;
+        worlds[wid].robots[rid].fitness = 0;
     }
 
     for (i = 0; i < NUM_SENSORS; i++)
@@ -411,9 +413,13 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
 
         float dist = distance(worlds[wid].robots[rid].transform.pos, worlds[wid].robots[otherid].transform.pos);
 
-        if (otherid > rid)
-            if (dist < 2*ROBOT_BODY_RADIUS)
+        //if (otherid > rid) {
+            if (dist < 2*ROBOT_BODY_RADIUS) {
                 set_random_position(ranluxcltab, worlds);
+                worlds[wid].robots[rid].energy = 0;
+                worlds[wid].robots[rid].fitness = 0;
+            }
+        //}
 
         if (dist < 2*ROBOT_BODY_RADIUS+IR_RADIUS)
         {
