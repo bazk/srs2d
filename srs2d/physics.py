@@ -117,12 +117,7 @@ class Simulator(object):
 
         else:
             self.prg.step_actuators(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds)
-
-            for i in range(self.dynamics_iterations):
-                kernel = self.prg.step_dynamics
-                kernel.set_scalar_arg_dtypes((None, None, np.float32))
-                kernel(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds, self.time_step/self.dynamics_iterations)
-
+            self.prg.step_dynamics(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
             self.prg.step_sensors(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds)
             self.prg.step_controllers(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
 
@@ -136,24 +131,11 @@ class Simulator(object):
         else:
             cur = 0
             while (cur < (self.ta+self.tb)):
-                if (cur == self.ta):
-                    kernel = self.prg.set_fitness
-                    kernel.set_scalar_arg_dtypes((None, np.float32))
-                    kernel(self.queue, self.global_size, self.local_size, self.worlds, 0).wait()
+                self.step()
 
-                    kernel = self.prg.set_energy
-                    kernel.set_scalar_arg_dtypes((None, np.float32))
-                    kernel(self.queue, self.global_size, self.local_size, self.worlds, 2).wait()
-
-                self.prg.step_actuators(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds)
-
-                for i in range(self.dynamics_iterations):
-                    kernel = self.prg.step_dynamics
-                    kernel.set_scalar_arg_dtypes((None, None, np.float32))
-                    kernel(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds, self.time_step/self.dynamics_iterations)
-
-                self.prg.step_sensors(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds)
-                self.prg.step_controllers(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
+                if (cur <= self.ta):
+                    self.set_fitness(0)
+                    self.set_energy(2)
 
                 cur += 1
 
@@ -212,6 +194,13 @@ class Simulator(object):
         kernel = self.prg.set_fitness
         kernel.set_scalar_arg_dtypes((None, np.float32))
         kernel(self.queue, self.global_size, self.local_size, self.worlds, fitness).wait()
+
+    def get_individual_fitness_energy(self):
+        fitene = np.zeros(self.num_worlds * self.num_robots, dtype=np.dtype((np.float32, (2,))))
+        fitene_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=fitene)
+        self.prg.get_individual_fitness_energy(self.queue, self.global_size, self.local_size, self.worlds, fitene_buf).wait()
+        cl.enqueue_copy(self.queue, fitene, fitene_buf)
+        return fitene
 
     def set_energy(self, energy):
         kernel = self.prg.set_energy

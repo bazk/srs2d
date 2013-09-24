@@ -38,17 +38,20 @@ NUM_HIDDEN      = 3
 
 W = 0.9
 ALFA = 2.0
-BETA = 2.0
+BETA = 1.0
 
-STEPS_TA = 18600
+#STEPS_TA = 18600
+STEPS_TA = 600
 STEPS_TB = 5400
 
-NUM_GENERATIONS = 1000
-NUM_RUNS = 1
+NUM_GENERATIONS = 500
+NUM_RUNS = 3
 NUM_ROBOTS = 10
 POPULATION_SIZE = 120
 
-D = [0.7, 0.9, 1.1, 1.3, 1.5]
+#D = [0.7, 0.9, 1.1, 1.3, 1.5]
+#D = [1.1, 1.3, 1.5]
+D = [1.1]
 
 class PSO(object):
     def __init__(self, context, queue):
@@ -116,8 +119,8 @@ class PSO(object):
 
             if new_gbest:
                 __log__.info('Saving simulation for the new found gbest...')
-                self.simulate_and_save('/tmp/simulation.srs', self.gbest.position, D[ random.randint(0, len(D)-1) ])
-                run.upload('/tmp/simulation.srs', 'run-%02d-new-gbest-gen-%04d.srs' % (run.id, generation) )
+                fit = self.simulate_and_save('/tmp/simulation.srs', self.gbest.position, D[ random.randint(0, len(D)-1) ])
+                run.upload('/tmp/simulation.srs', 'run-%02d-new-gbest-gen-%04d-fit-%.2f.srs' % (run.id, generation, fit) )
 
             for p in self.particles:
                 p.gbest = self.gbest
@@ -142,24 +145,32 @@ class PSO(object):
         save.add_circle(target_areas[0][0], target_areas[0][1], target_areas_radius[0][0], .0, .1)
         save.add_circle(target_areas[0][2], target_areas[0][3], target_areas_radius[0][1], .0, .1)
 
+        fitene = simulator.get_individual_fitness_energy()
         transforms, radius = simulator.get_transforms()
         robot_radius = radius[0][0]
 
         robot_obj = [ None for i in range(len(transforms)) ]
         for i in range(len(transforms)):
-            robot_obj[i] = save.add_circle(transforms[i][0], transforms[i][1], robot_radius, transforms[i][2], transforms[i][3])
+            robot_obj[i] = save.add_circle(transforms[i][0], transforms[i][1], robot_radius, transforms[i][2], transforms[i][3], opt1=fitene[i][0], opt2=fitene[i][1])
 
-        max_steps = STEPS_TA + STEPS_TB
         current_step = 0
-        while current_step < max_steps:
+        while current_step < (STEPS_TA + STEPS_TB):
             simulator.step()
+
+            if (current_step <= STEPS_TA):
+                simulator.set_fitness(0)
+                simulator.set_energy(2)
+
+            fitene = simulator.get_individual_fitness_energy()
             transforms, radius = simulator.get_transforms()
             for i in range(len(transforms)):
-                robot_obj[i].update(transforms[i][0], transforms[i][1], robot_radius, transforms[i][2], transforms[i][3])
+                robot_obj[i].update(transforms[i][0], transforms[i][1], robot_radius, transforms[i][2], transforms[i][3], opt1=fitene[i][0], opt2=fitene[i][1])
             save.frame()
             current_step += 1
 
         save.close()
+
+        return simulator.get_fitness()[0]
 
 class Particle(object):
     def __init__(self):

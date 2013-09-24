@@ -33,6 +33,22 @@ class TestSimulator(object):
 
         simulator = physics.Simulator(context, queue, num_worlds=1, num_robots=NUM_ROBOTS, ta=600, tb=5400)
 
+        pos = physics.ANNParametersArray(True)
+        simulator.set_ann_parameters(0, pos)
+        simulator.commit_ann_parameters()
+        simulator.init_worlds(D)
+
+        simulator.simulate()
+
+        print 'fitness = ', simulator.get_fitness()[0]
+
+
+    def run_and_save(self, ta=18600, tb=5400):
+        context = cl.create_some_context()
+        queue = cl.CommandQueue(context)
+
+        simulator = physics.Simulator(context, queue, num_worlds=1, num_robots=NUM_ROBOTS, ta=ta, tb=tb)
+
         save = io.SaveFile.new('/tmp/test.srs', step_rate=1/float(simulator.time_step))
 
         pos = physics.ANNParametersArray(True)
@@ -45,26 +61,26 @@ class TestSimulator(object):
         save.add_circle(target_areas[0][0], target_areas[0][1], target_areas_radius[0][0], .0, .1)
         save.add_circle(target_areas[0][2], target_areas[0][3], target_areas_radius[0][1], .0, .1)
 
+        fitene = simulator.get_individual_fitness_energy()
         transforms, radius = simulator.get_transforms()
         robot_radius = radius[0][0]
 
         robot_obj = [ None for i in range(len(transforms)) ]
         for i in range(len(transforms)):
-            robot_obj[i] = save.add_circle(transforms[i][0], transforms[i][1], robot_radius, transforms[i][2], transforms[i][3])
+            robot_obj[i] = save.add_circle(transforms[i][0], transforms[i][1], robot_radius, transforms[i][2], transforms[i][3], opt1=fitene[i][0], opt2=fitene[i][1])
 
-        ta = 600
-        tb = 5400
         cur = 0
         while (cur < (ta+tb)):
-            if (cur == ta):
+            simulator.step()
+
+            if (cur <= ta):
                 simulator.set_fitness(0)
                 simulator.set_energy(2)
 
-            simulator.step()
-
+            fitene = simulator.get_individual_fitness_energy()
             transforms, radius = simulator.get_transforms()
             for i in range(len(transforms)):
-                robot_obj[i].update(transforms[i][0], transforms[i][1], robot_radius, transforms[i][2], transforms[i][3])
+                robot_obj[i].update(transforms[i][0], transforms[i][1], robot_radius, transforms[i][2], transforms[i][3], opt1=fitene[i][0], opt2=fitene[i][1])
             save.frame()
 
             cur += 1
@@ -74,4 +90,4 @@ class TestSimulator(object):
         save.close()
 
 if __name__=="__main__":
-    TestSimulator().run()
+    TestSimulator().run_and_save()
