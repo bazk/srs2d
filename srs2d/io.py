@@ -1,4 +1,4 @@
-1# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 #
 # This file is part of srs2d.
 #
@@ -24,7 +24,7 @@ import struct
 
 __log__ = logging.getLogger(__name__)
 
-CURRENT_VERSION = 1
+CURRENT_VERSION = 2
 BUFFER_SIZE = 4096 * 1024
 
 OP_TYPE = '\x00'
@@ -32,61 +32,93 @@ OP_POS = '\x01'
 OP_RADIUS = '\x02'
 OP_ORIENTATION = '\x03'
 OP_SIZE = '\x04'
+OP_OPT1 = '\x05'
+OP_OPT2 = '\x06'
 TYPE_CIRCLE = '\x00'
 TYPE_SQUARE = '\x01'
 
-class Circle(object):
-    def __init__(self, x, y, radius, sin, cos):
-        self.x = x
-        self.y = y
-        self.radius = radius
-        self.sin = sin
-        self.cos = cos
-        self.changed = True
+class Object(object):
+    def __init__(self, **kwargs):
+        self.properties = {}
 
-    def update(self, x, y, radius, sin, cos):
-        if (x != self.x) or (y != self.y) or (radius != self.radius) or (sin != self.sin) or (cos != self.cos):
-            self.x = x
-            self.y = y
-            self.radius = radius
-            self.sin = sin
-            self.cos = cos
+        for k,v in kwargs.iteritems():
+            self.properties[k] = (v, True)
 
-            self.changed = True
+    def update(self, **kwargs):
+        for k,v in kwargs.iteritems():
+            if not k in self.properties:
+                __log__.warn("Property not set in initialization, not updating (%s)", k)
+                continue
 
-    def serialize(self, id):
-        self.changed = False
+            self.properties[k] = (v, self.properties[k][0] != v)
+
+    def set_unchanged(self):
+        for k,v in self.properties.iteritems():
+            self.properties[k] = (v[0], False)
+
+class Circle(Object):
+    def __init__(self, x, y, radius, sin, cos, opt1=None, opt2=None):
+        super(Circle, self).__init__(x=x, y=y, radius=radius, sin=sin, cos=cos, opt1=opt1, opt2=opt2)
+
+    def update(self, x, y, radius, sin, cos, opt1=None, opt2=None):
+        super(Circle, self).update(x=x, y=y, radius=radius, sin=sin, cos=cos, opt1=opt1, opt2=opt2)
+
+    def serialize(self, id, keystep=False):
+        props = self.properties
+
         res = ''
-        res += struct.pack('>cHc', OP_TYPE, id, TYPE_CIRCLE)
-        res += struct.pack('>cHff', OP_POS, id, self.x, self.y)
-        res += struct.pack('>cHf', OP_RADIUS, id, self.radius)
-        res += struct.pack('>cHff', OP_ORIENTATION, id, self.sin, self.cos)
+
+        if keystep:
+            res += struct.pack('>cHc', OP_TYPE, id, TYPE_CIRCLE)
+
+        if keystep or (props['x'][1]) or (props['y'][1]):
+            res += struct.pack('>cHff', OP_POS, id, props['x'][0], props['y'][0])
+
+        if keystep or (props['radius'][1]):
+            res += struct.pack('>cHf', OP_RADIUS, id, props['radius'][0])
+
+        if keystep or (props['sin'][1]) or (props['cos'][1]):
+            res += struct.pack('>cHff', OP_ORIENTATION, id, props['sin'][0], props['cos'][0])
+
+        if ( keystep or (props['opt1'][1]) ) and (props['opt1'][0] is not None):
+            res += struct.pack('>cHf', OP_OPT1, id, props['opt1'][0])
+
+        if ( keystep or (props['opt2'][1]) ) and (props['opt2'][0] is not None):
+            res += struct.pack('>cHf', OP_OPT2, id, props['opt2'][0])
+
+        self.set_unchanged()
+
         return res
 
-class Square(object):
-    def __init__(self, x, y, width, height):
-        self.x = x
-        self.y = y
-        self.width = width
-        self.height = height
+class Square(Object):
+    def __init__(self, x, y, width, height, opt1=None, opt2=None):
+        super(Square, self).__init__(x=x, y=y, width=width, height=height, opt1=opt1, opt2=opt2)
 
-        self.changed = True
+    def update(self, x, y, width, height, opt1=None, opt2=None):
+        super(Square, self).update(x=x, y=y, width=width, height=height, opt1=opt1, opt2=opt2)
 
-    def update(self, x, y, width, height):
-        if (x != self.x) or (y != self.y) or (width != self.width) or (height != self.height):
-            self.x = x
-            self.y = y
-            self.width = width
-            self.height = height
+    def serialize(self, id, keystep=False):
+        props = self.properties
 
-            self.changed = True
-
-    def serialize(self, id):
-        self.changed = False
         res = ''
-        res += struct.pack('>cHc', OP_TYPE, id, TYPE_SQUARE)
-        res += struct.pack('>cHff', OP_POS, id, self.x, self.y)
-        res += struct.pack('>cHff', OP_SIZE, id, self.width, self.height)
+
+        if keystep:
+            res += struct.pack('>cHc', OP_TYPE, id, TYPE_SQUARE)
+
+        if keystep or (props['x'][1]) or (props['y'][1]):
+            res += struct.pack('>cHff', OP_POS, id, props['x'][0], props['y'][0])
+
+        if keystep or (props['width'][1]) or (props['height'][1]):
+            res += struct.pack('>cHff', OP_SIZE, id, props['width'][0], props['height'][0])
+
+        if ( keystep or (props['opt1'][1]) ) and (props['opt1'][0] is not None):
+            res += struct.pack('>cHf', OP_OPT1, id, props['opt1'][0])
+
+        if ( keystep or (props['opt2'][1]) ) and (props['opt2'][0] is not None):
+            res += struct.pack('>cHf', OP_OPT2, id, props['opt2'][0])
+
+        self.set_unchanged()
+
         return res
 
 class SaveFile(object):
@@ -117,13 +149,13 @@ class SaveFile(object):
 
         self.fd.close()
 
-    def add_circle(self, x, y, radius, sin, cos):
-        circle = Circle(x, y, radius, sin, cos)
+    def add_circle(self, x, y, radius, sin, cos, opt1=None, opt2=None):
+        circle = Circle(x, y, radius, sin, cos, opt1, opt2)
         self.objs.append(circle)
         return circle
 
-    def add_square(self, x, y, width, height):
-        square = Square(x, y, width, height)
+    def add_square(self, x, y, width, height, opt1=None, opt2=None):
+        square = Square(x, y, width, height, opt1, opt2)
         self.objs.append(square)
         return square
 
@@ -132,13 +164,12 @@ class SaveFile(object):
             self._insert_keystep()
 
             for i in range(len(self.objs)):
-                self._write(self.objs[i].serialize(i))
+                self._write(self.objs[i].serialize(i, True))
         else:
             self._insert_step()
 
             for i in range(len(self.objs)):
-                if self.objs[i].changed:
-                    self._write(self.objs[i].serialize(i))
+                self._write(self.objs[i].serialize(i, False))
 
         if self.keystep_counter >= self.step_rate:
             self.keystep_counter = 0
