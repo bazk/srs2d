@@ -230,6 +230,10 @@ class ANNParametersArray(object):
     def __str__(self):
         return str(self.to_dict())
 
+    def __len__(self):
+        return len(self.weights) + len(self.bias) + len(self.weights_hidden) + \
+                len(self.bias_hidden) + len(self.timec_hidden)
+
     def to_dict(self):
         return {
             'weights': [ x for x in self.weights.flat ],
@@ -349,3 +353,45 @@ class ANNParametersArray(object):
         self.bias_hidden = np.array(data['bias_hidden'])
         self.timec_hidden = np.array(data['timec_hidden'])
         return self
+
+    def merge(self, point, other):
+        if len(self) != len(other):
+            raise Exception('Cannot merge arrays of different sizes.')
+
+        if (point < 0) or (point > len(self) - 1):
+            raise Exception('Point out of bounds.')
+
+        if point < len(self.weights):
+            for i in xrange(point, len(self.weights)):
+                self.weights[i] = other.weights[i]
+            point = 0
+        else:
+            point -= len(self.weights)
+
+        if point < len(self.bias):
+            for i in xrange(point, len(self.bias)):
+                self.bias[i] = other.bias[i]
+            point = 0
+        else:
+            point -= len(self.bias)
+
+        if point < len(self.weights_hidden):
+            for i in xrange(point, len(self.weights_hidden)):
+                self.weights_hidden[i] = other.weights_hidden[i]
+            point = 0
+        else:
+            point -= len(self.weights_hidden)
+
+        if point < len(self.bias_hidden):
+            for i in xrange(point, len(self.bias_hidden)):
+                self.bias_hidden[i] = other.bias_hidden[i]
+            point = 0
+        else:
+            point -= len(self.bias_hidden)
+
+        if point < len(self.timec_hidden):
+            for i in xrange(point, len(self.timec_hidden)):
+                self.timec_hidden[i] = other.timec_hidden[i]
+            point = 0
+        else:
+            point -= len(self.timec_hidden)
