@@ -58,7 +58,7 @@ typedef struct {
     float2 wheels_angular_speed;
     int front_led;
     int rear_led;
-    int collision_count;
+    int collision;
     float energy;
     float fitness;
     int last_target_area;
@@ -274,7 +274,7 @@ __kernel void init_robots(__global ranluxcl_state_t *ranluxcltab, __global world
     worlds[wid].robots[rid].wheels_angular_speed.s1 = 0;
     worlds[wid].robots[rid].front_led = 0;
     worlds[wid].robots[rid].rear_led = 0;
-    worlds[wid].robots[rid].collision_count = 0;
+    worlds[wid].robots[rid].collision = 0;
     worlds[wid].robots[rid].energy = 2;
     worlds[wid].robots[rid].fitness = 0.0;
     worlds[wid].robots[rid].last_target_area = -1;
@@ -367,6 +367,19 @@ __kernel void step_dynamics(__global ranluxcl_state_t *ranluxcltab, __global wor
     int wid = get_global_id(0);
     int rid = get_global_id(1);
 
+    if (worlds[wid].robots[rid].collision != 0) {
+        set_random_position(ranluxcltab, worlds);
+        worlds[wid].robots[rid].wheels_angular_speed.s0 = 0;
+        worlds[wid].robots[rid].wheels_angular_speed.s1 = 0;
+        worlds[wid].robots[rid].front_led = 0;
+        worlds[wid].robots[rid].rear_led = 0;
+        worlds[wid].robots[rid].collision = 0;
+        worlds[wid].robots[rid].energy = 2;
+        worlds[wid].robots[rid].fitness = 0.0;
+        worlds[wid].robots[rid].last_target_area = -1;
+        return;
+    }
+
     float2 wls; // wheels linear speed
     wls.s0 = worlds[wid].robots[rid].wheels_angular_speed.s0 * WHEELS_RADIUS;
     wls.s1 = worlds[wid].robots[rid].wheels_angular_speed.s1 * WHEELS_RADIUS;
@@ -393,33 +406,17 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
 
     unsigned int i, otherid;
 
+    for (i = 0; i < NUM_SENSORS; i++)
+        worlds[wid].robots[rid].sensors[i] = 0.0;
+
     if ( ((worlds[wid].robots[rid].transform.pos.x+ROBOT_BODY_RADIUS) > (worlds[wid].arena_width/2)) ||
          ((worlds[wid].robots[rid].transform.pos.x-ROBOT_BODY_RADIUS) < (-worlds[wid].arena_width/2)) ||
          ((worlds[wid].robots[rid].transform.pos.y+ROBOT_BODY_RADIUS) > (worlds[wid].arena_height/2)) ||
          ((worlds[wid].robots[rid].transform.pos.y-ROBOT_BODY_RADIUS) < (-worlds[wid].arena_height/2)) )
     {
-        set_random_position(ranluxcltab, worlds);
-        worlds[wid].robots[rid].wheels_angular_speed.s0 = 0;
-        worlds[wid].robots[rid].wheels_angular_speed.s1 = 0;
-        worlds[wid].robots[rid].front_led = 0;
-        worlds[wid].robots[rid].rear_led = 0;
-        worlds[wid].robots[rid].collision_count = 0;
-        worlds[wid].robots[rid].energy = 2;
-        worlds[wid].robots[rid].fitness = 0.0;
-        worlds[wid].robots[rid].last_target_area = -1;
-
-        for (i=0; i<NUM_SENSORS; i++)
-            worlds[wid].robots[rid].sensors[i] = 0;
-
-        for (i=0; i<NUM_ACTUATORS; i++)
-            worlds[wid].robots[rid].actuators[i] = 0;
-
-        for (i=0; i<NUM_HIDDEN; i++)
-            worlds[wid].robots[rid].hidden[i] = 0;
+        worlds[wid].robots[rid].collision = 1;
+        return;
     }
-
-    for (i = 0; i < NUM_SENSORS; i++)
-        worlds[wid].robots[rid].sensors[i] = 0.0;
 
     for (otherid = 0; otherid < ROBOTS_PER_WORLD; otherid++)
     {
@@ -428,28 +425,11 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
 
         float dist = distance(worlds[wid].robots[rid].transform.pos, worlds[wid].robots[otherid].transform.pos);
 
-        //if (otherid > rid) {
-            if (dist < 2*ROBOT_BODY_RADIUS) {
-                set_random_position(ranluxcltab, worlds);
-                worlds[wid].robots[rid].wheels_angular_speed.s0 = 0;
-                worlds[wid].robots[rid].wheels_angular_speed.s1 = 0;
-                worlds[wid].robots[rid].front_led = 0;
-                worlds[wid].robots[rid].rear_led = 0;
-                worlds[wid].robots[rid].collision_count = 0;
-                worlds[wid].robots[rid].energy = 2;
-                worlds[wid].robots[rid].fitness = 0.0;
-                worlds[wid].robots[rid].last_target_area = -1;
-
-                for (i=0; i<NUM_SENSORS; i++)
-                    worlds[wid].robots[rid].sensors[i] = 0;
-
-                for (i=0; i<NUM_ACTUATORS; i++)
-                    worlds[wid].robots[rid].actuators[i] = 0;
-
-                for (i=0; i<NUM_HIDDEN; i++)
-                    worlds[wid].robots[rid].hidden[i] = 0;
-            }
-        //}
+        // if ((dist < 2*ROBOT_BODY_RADIUS) && (otherid > rid)) {
+        if (dist < 2*ROBOT_BODY_RADIUS) {
+            worlds[wid].robots[rid].collision = 1;
+            return;
+        }
 
         if (dist < 2*ROBOT_BODY_RADIUS+IR_RADIUS)
         {
