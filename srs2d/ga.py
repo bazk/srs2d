@@ -36,18 +36,18 @@ NUM_SENSORS     = 13
 NUM_ACTUATORS   = 4
 NUM_HIDDEN      = 3
 
-STEPS_TA = 18600
+STEPS_TA = 600
 STEPS_TB = 5400
 
-NUM_GENERATIONS = 500
-NUM_RUNS = 5
+NUM_GENERATIONS = 1000
+NUM_RUNS = 10
 NUM_ROBOTS = 10
 POPULATION_SIZE = 120
 
 D = [0.9, 1.1, 1.3]
 
 PCROSSOVER = 0.9
-PMUTATION = 0.02
+PMUTATION = 0.03
 ELITE_SIZE = 20
 
 class GA(object):
@@ -55,17 +55,17 @@ class GA(object):
         self.context = context
         self.queue = queue
 
-    def select(self):
-        return self.population.pop()
+    def select(self, population):
+        return population.pop()
 
-    def evaluate(self):
-        for i in xrange(len(self.population)):
-            params = self.population[i].genome
+    def evaluate(self, population):
+        for i in xrange(len(population)):
+            params = population[i].genome
             self.simulator.set_ann_parameters(i, params)
         self.simulator.commit_ann_parameters()
 
-        for i in xrange(len(self.population)):
-            self.population[i].fitness = .0
+        for i in xrange(len(population)):
+            population[i].fitness = .0
 
         for d in D:
             for i in range(3):
@@ -73,11 +73,11 @@ class GA(object):
                 self.simulator.simulate()
 
                 fit = self.simulator.get_fitness()
-                for i in xrange(len(self.population)):
-                    self.population[i].fitness += fit[i]
+                for i in xrange(len(population)):
+                    population[i].fitness += fit[i]
 
-        for i in xrange(len(self.population)):
-            self.population[i].fitness /= len(D) * 3
+        for i in xrange(len(population)):
+            population[i].fitness /= len(D) * 3
 
     def execute(self, run):
         __log__.info(' GA Starting...')
@@ -94,7 +94,7 @@ class GA(object):
         last_best_fitness = 0
 
         __log__.info('Calculating initial fitness...')
-        self.evaluate()
+        self.evaluate(self.population)
         self.population = sorted(self.population, key=lambda ind: ind.fitness)
 
         generation = 0
@@ -110,8 +110,8 @@ class GA(object):
                 size -= 1
 
             for i in xrange(0, size, 2):
-                genomeMom = self.select()
-                genomeDad = self.select()
+                genomeMom = self.select(self.population)
+                genomeDad = self.select(self.population)
 
                 if (PCROSSOVER >= 1) or (random.random() < PCROSSOVER):
                    (sister, brother) = genomeMom.crossover(genomeDad)
@@ -125,7 +125,7 @@ class GA(object):
                 new_pop.append(brother)
 
             if len(self.population) % 2 != 0:
-                last = self.select().copy()
+                last = self.select(self.population).copy()
 
                 if (PMUTATION >= 1) or (random.random() < PMUTATION):
                     last.mutate()
@@ -133,18 +133,8 @@ class GA(object):
                 new_pop.append(last)
 
             __log__.info('Calculating fitness for each individual...')
-            self.evaluate()
+            self.evaluate(new_pop)
             new_pop =  sorted(new_pop, key=lambda ind: ind.fitness)
-
-            __log__.info('-' * 80)
-            __log__.info('ELITE')
-            for i in xrange(ELITE_SIZE):
-                __log__.info(str(elite[i]))
-            __log__.info('-' * 80)
-            __log__.info('NEW POP')
-            for i in xrange(len(new_pop)):
-                __log__.info(str(new_pop[i]))
-            __log__.info('-' * 80)
 
             for i in xrange(ELITE_SIZE):
                 if elite[i].fitness > new_pop[i - ELITE_SIZE].fitness:
@@ -153,6 +143,12 @@ class GA(object):
             self.population = sorted(new_pop, key=lambda ind: ind.fitness)
 
             generation += 1
+
+            __log__.info('-' * 80)
+            __log__.info('NEW POP')
+            for i in xrange(len(new_pop)):
+                __log__.info(str(new_pop[i]))
+            __log__.info('-' * 80)
 
             best = self.population[-1]
             new_best = False
