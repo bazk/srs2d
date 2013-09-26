@@ -435,8 +435,12 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
         {
             float s = worlds[wid].robots[otherid].transform.pos.y - worlds[wid].robots[rid].transform.pos.y;
             float c = worlds[wid].robots[otherid].transform.pos.x - worlds[wid].robots[rid].transform.pos.x;
-            float a = atan2(s, c) - atan2(worlds[wid].robots[otherid].transform.rot.sin, worlds[wid].robots[otherid].transform.rot.cos);
-            int idx = (int) floor(a / (2*M_PI/8)) % 8;
+
+            float a = atan2(s, c) - atan2(worlds[wid].robots[rid].transform.rot.sin, worlds[wid].robots[rid].transform.rot.cos);
+            if (a < 0)
+                a += 2*M_PI;
+
+            int idx = (int) floor(fabs(a) / (2*M_PI/8)) % 8;
             worlds[wid].robots[rid].sensors[IN_proximity0+idx] = 1 - ((dist - 2*ROBOT_BODY_RADIUS) / IR_RADIUS);
         }
 
