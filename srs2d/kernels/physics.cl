@@ -536,7 +536,7 @@ __kernel void simulate(__global ranluxcl_state_t *ranluxcltab, __global world_t 
     int wid = get_global_id(0);
     int rid = get_global_id(1);
 
-    unsigned int i, cur = 0;
+    unsigned int cur = 0;
 
     while (cur < (TA + TB))
     {
