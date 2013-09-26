@@ -226,7 +226,7 @@ class Individual(object):
         self.fitness = 0
         self.genome = physics.ANNParametersArray(True)
 
-    def __str__(self):
+    def __repr__(self):
         return 'Individual(%d, fitness=%.5f)' % (self.id, self.fitness)
 
     def copy(self):
