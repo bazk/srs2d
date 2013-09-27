@@ -7,7 +7,7 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# trooper-simulator is distributed in the hope that it will be useful,
+# srs2d is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
@@ -19,6 +19,7 @@ __author__ = "Eduardo L. Buratti <eburatti09@gmail.com>"
 __date__ = "04 Jul 2013"
 
 import os
+import argparse
 import random
 import logging
 import physics
@@ -29,75 +30,79 @@ import solace
 import io
 
 logging.config.dictConfig(logconfig.LOGGING)
-
 __log__ = logging.getLogger(__name__)
 
-NUM_SENSORS     = 13
-NUM_ACTUATORS   = 4
-NUM_HIDDEN      = 3
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--no-save",                help="skip saving best fitness simulation", action="store_true")
+    parser.add_argument("-w", "--inertia",          help="set PSO inertia (W) parameter, default is 0.9", type=float, default=0.9)
+    parser.add_argument("-a", "--alfa",             help="set PSO alfa parameter, default is 2.0", type=float, default=2)
+    parser.add_argument("-b", "--beta",             help="set PSO beta parameter, default is 2.0", type=float, default=2)
+    parser.add_argument("--ta",                     help="number of timesteps without fitness avaliation, default is 600", type=int, default=600)
+    parser.add_argument("--tb",                     help="number of timesteps with fitness avaliation, default is 5400", type=int, default=5400)
+    parser.add_argument("-g", "--num-generations",  help="number of generations, default is 500", type=int, default=500)
+    parser.add_argument("-r", "--num-runs",         help="number of runs, default is 3", type=int, default=3)
+    parser.add_argument("-n", "--num-robots",       help="number of robots, default is 10", type=int, default=10)
+    parser.add_argument("-p", "--population-size",  help="PSO population size (particles), default is 10", type=int, default=10)
+    parser.add_argument("-d", "--distances",        help="list of distances between target areas to be evaluated each generation, default is 0.7 0.9 1.1 1.3 1.5", type=float, nargs='+', default=[0.7, 0.9, 1.1, 1.3, 1.5])
+    parser.add_argument("-t", "--trials",           help="number of trials per distance, default is 3", type=int, default=3)
+    args = parser.parse_args()
 
-W = 0.9
-ALFA = 2.0
-BETA = 1.0
+    uri = os.environ.get('SOLACE_URI')
+    username = os.environ.get('SOLACE_USERNAME')
+    password = os.environ.get('SOLACE_PASSWORD')
 
-#STEPS_TA = 18600
-STEPS_TA = 600
-STEPS_TB = 5400
+    if (uri is None) or (username is None) or (password is None):
+        raise Exception('Environment variables (SOLACE_URI, SOLACE_USERNAME, SOLACE_PASSWORD) not set!')
 
-NUM_GENERATIONS = 500
-NUM_RUNS = 3
-NUM_ROBOTS = 10
-POPULATION_SIZE = 120
+    context = cl.create_some_context()
+    queue = cl.CommandQueue(context)
 
-#D = [0.7, 0.9, 1.1, 1.3, 1.5]
-#D = [1.1, 1.3, 1.5]
-D = [1.1]
+    exp = solace.get_experiment(uri, username, password)
+    inst = exp.create_instance(args.num_runs, {
+        'W': args.inertia,
+        'ALFA': args.alfa,
+        'BETA': args.beta,
+        'STEPS_TA': args.ta,
+        'STEPS_TB': args.tb,
+        'NUM_GENERATIONS': args.num_generations,
+        'NUM_RUNS': args.num_runs,
+        'NUM_ROBOTS': args.num_robots,
+        'POPULATION_SIZE': args.population_size,
+        'D': args.distances,
+        'TRIALS': args.trials,
+    })
+
+    for run in inst.runs:
+        PSO(context, queue).execute(run, args)
 
 class PSO(object):
     def __init__(self, context, queue):
-        self.gbest = None
-        self.gbest_fitness = None
-        self.particles = []
         self.context = context
         self.queue = queue
 
-    def execute(self, run):
-        __log__.info(' PSO Starting...')
-        __log__.info('=' * 80)
+    def execute(self, run, args):
+        __log__.info('Starting PSO...')
 
         run.begin()
 
-        self.particles = [ Particle() for i in range(POPULATION_SIZE) ]
+        self.gbest = None
+        self.gbest_fitness = None
+
+        self.particles = [ Particle(args.inertia, args.alfa, args.beta) for i in range(args.population_size) ]
+
         self.simulator = physics.Simulator(self.context, self.queue,
-                                           num_worlds=POPULATION_SIZE,
-                                           num_robots=NUM_ROBOTS,
-                                           ta=STEPS_TA, tb=STEPS_TB)
+                                           num_worlds=args.population_size,
+                                           num_robots=args.num_robots,
+                                           ta=args.ta, tb=args.tb)
 
-        generation = 0
+        generation = 1
 
-        while (generation < NUM_GENERATIONS):
-            __log__.info('Calculating fitness for each particle...')
+        while (generation <= args.num_generations):
+            __log__.info('[gen=%d] Evaluating particles...', generation)
+            self.evaluate(args.distances, args.trials)
 
-            for p in range(len(self.particles)):
-                pos = self.particles[p].position
-                self.simulator.set_ann_parameters(p, pos)
-            self.simulator.commit_ann_parameters()
-
-            for p in range(len(self.particles)):
-                self.particles[p].fitness = 0.0
-
-            for d in D:
-                for i in range(3):
-                    self.simulator.init_worlds(d)
-                    self.simulator.simulate()
-
-                    fit = self.simulator.get_fitness()
-                    for p in range(len(self.particles)):
-                        self.particles[p].fitness += fit[p]
-
-            for p in range(len(self.particles)):
-                self.particles[p].fitness /= len(D) * 3
-
+            __log__.info('[gen=%d] Updating particles...', generation)
             for p in self.particles:
                 p.update_pbest()
 
@@ -105,34 +110,60 @@ class PSO(object):
             for p in self.particles:
                 if (self.gbest is None) or (p.pbest.fitness > self.gbest.fitness):
                     self.gbest = p.pbest.copy()
-                    __log__.info('Found new gbest: %s', str(self.gbest))
                     new_gbest = True
-
-            generation += 1
-
-            __log__.info('-' * 80)
-            __log__.info('[gen=%d] CURRENT GBEST IS: %s', generation, str(self.gbest))
-            __log__.info(str(self.gbest.position))
-            __log__.info('-' * 80)
-
-            run.progress(generation / float(NUM_GENERATIONS), {'generation': generation, 'gbest_fitness': self.gbest.fitness, 'gbest_position': self.gbest.position.to_dict()})
-
-            if new_gbest:
-                __log__.info('Saving simulation for the new found gbest...')
-                fit = self.simulate_and_save('/tmp/simulation.srs', self.gbest.position, D[ random.randint(0, len(D)-1) ])
-                run.upload('/tmp/simulation.srs', 'run-%02d-new-gbest-gen-%04d-fit-%.2f.srs' % (run.id, generation, fit) )
 
             for p in self.particles:
                 p.gbest = self.gbest
                 p.update_pos_vel()
 
-        run.done({'generation': generation, 'gbest_fitness': self.gbest.fitness, 'gbest_position': self.gbest.position.to_dict()})
+            __log__.info('[gen=%d] Particles updated, current gbest: %s', generation, str(self.gbest))
 
-    def simulate_and_save(self, filename, pos, distance):
+            if new_gbest:
+                run.progress(generation / float(args.num_generations), {
+                    'generation': generation,
+                    'gbest_fitness': self.gbest.fitness,
+                    'gbest_position': self.gbest.position.to_dict()
+                })
+
+                if not args.no_save:
+                    __log__.info('[gen=%d] Saving simulation for the new found gbest...', generation)
+                    fit = self.simulate_and_save('/tmp/simulation.srs', self.gbest.position, args.ta, args.tb,
+                        args.num_robots, args.distances[ random.randint(0, len(args.distances)-1) ])
+
+                    run.upload('/tmp/simulation.srs', 'run-%02d-new-gbest-gen-%04d-fit-%.5f.srs' % (run.id, generation, fit))
+
+            else:
+                run.progress(generation / float(args.num_generations), {'generation': generation})
+
+            generation += 1
+
+        run.done()
+
+    def evaluate(self, distances, trials):
+        for p in range(len(self.particles)):
+            self.simulator.set_ann_parameters(p, self.particles[p].position)
+        self.simulator.commit_ann_parameters()
+
+        for p in range(len(self.particles)):
+            self.particles[p].fitness = 0.0
+
+        for d in distances:
+            for i in range(trials):
+                self.simulator.init_worlds(d)
+                self.simulator.simulate()
+
+                fit = self.simulator.get_fitness()
+                for p in range(len(self.particles)):
+                    self.particles[p].fitness += fit[p]
+
+        for p in range(len(self.particles)):
+            self.particles[p].fitness /= len(distances) * trials
+
+    def simulate_and_save(self, filename, pos, ta, tb, num_robots, distance):
         simulator = physics.Simulator(self.context, self.queue,
                                       num_worlds=1,
-                                      num_robots=NUM_ROBOTS,
-                                      ta=STEPS_TA, tb=STEPS_TB)
+                                      num_robots=num_robots,
+                                      ta=ta, tb=tb)
 
         save = io.SaveFile.new(filename, step_rate=1/float(simulator.time_step))
 
@@ -154,10 +185,10 @@ class PSO(object):
             robot_obj[i] = save.add_circle(transforms[i][0], transforms[i][1], robot_radius, transforms[i][2], transforms[i][3], opt1=fitene[i][0], opt2=fitene[i][1])
 
         current_step = 0
-        while current_step < (STEPS_TA + STEPS_TB):
+        while current_step < (ta + tb):
             simulator.step()
 
-            if (current_step <= STEPS_TA):
+            if (current_step <= ta):
                 simulator.set_fitness(0)
                 simulator.set_energy(2)
 
@@ -173,8 +204,12 @@ class PSO(object):
         return simulator.get_fitness()[0]
 
 class Particle(object):
-    def __init__(self):
+    def __init__(self, inertia=0.9, alfa=2.0, beta=2.0):
         self.id = id(self)
+
+        self.inertia = inertia
+        self.alfa = alfa
+        self.beta = beta
 
         self.position = physics.ANNParametersArray(True)
         self.velocity = physics.ANNParametersArray(True)
@@ -187,7 +222,7 @@ class Particle(object):
         return 'Particle(%d, fitness=%.5f)' % (self.id, self.fitness)
 
     def copy(self):
-        p = Particle()
+        p = Particle(self.inertia, self.alfa, self.beta)
         p.position = self.position.copy()
         p.velocity = self.velocity.copy()
         p.fitness = self.fitness
@@ -199,44 +234,12 @@ class Particle(object):
         if (self.pbest is None) or (self.fitness > self.pbest.fitness):
             self.pbest = self.copy()
 
-            __log__.info('[Particle %d] Found new pbest: %s', self.id, str(self.pbest))
-
     def update_pos_vel(self):
-        global W, ALFA, BETA
-
-        self.velocity = W * self.velocity + \
-                        ALFA * random.uniform(0, 1.0) * (self.pbest.position - self.position) + \
-                        BETA * random.uniform(0, 1.0) * (self.gbest.position - self.position)
+        self.velocity = self.inertia * self.velocity + \
+                        self.alfa * random.uniform(0, 1.0) * (self.pbest.position - self.position) + \
+                        self.beta * random.uniform(0, 1.0) * (self.gbest.position - self.position)
 
         self.position = self.position + self.velocity
 
 if __name__=="__main__":
-    uri = os.environ.get('SOLACE_URI')
-    username = os.environ.get('SOLACE_USERNAME')
-    password = os.environ.get('SOLACE_PASSWORD')
-
-    if (uri is None) or (username is None) or (password is None):
-        raise Exception('Environment variables (SOLACE_URI, SOLACE_USERNAME, SOLACE_PASSWORD) not set!')
-
-    context = cl.create_some_context()
-    queue = cl.CommandQueue(context)
-
-    exp = solace.get_experiment(uri, username, password)
-    inst = exp.create_instance(NUM_RUNS, {
-        'NUM_SENSORS': NUM_SENSORS,
-        'NUM_ACTUATORS': NUM_ACTUATORS,
-        'NUM_HIDDEN': NUM_HIDDEN,
-        'W': W,
-        'ALFA': ALFA,
-        'BETA': BETA,
-        'STEPS_TA': STEPS_TA,
-        'STEPS_TB': STEPS_TB,
-        'NUM_GENERATIONS': NUM_GENERATIONS,
-        'NUM_RUNS': NUM_RUNS,
-        'NUM_ROBOTS': NUM_ROBOTS,
-        'POPULATION_SIZE': POPULATION_SIZE,
-        'D': D
-    })
-
-    for run in inst.runs:
-        PSO(context, queue).execute(run)
+    main()
