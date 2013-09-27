@@ -25,15 +25,16 @@ import logging
 import physics
 import pyopencl as cl
 import logging.config
-import logconfig
 import solace
 import io
 
-logging.config.dictConfig(logconfig.LOGGING)
+logging.basicConfig(format='[ %(asctime)s ] [%(levelname)s] %(message)s')
 __log__ = logging.getLogger(__name__)
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("-v", "--verbosity",        help="increase output verbosity", action="count")
+    parser.add_argument("-q", "--quiet",            help="supress output (except errors)", action="store_true")
     parser.add_argument("--no-save",                help="skip saving best fitness simulation", action="store_true")
     parser.add_argument("-w", "--inertia",          help="set PSO inertia (W) parameter, default is 0.9", type=float, default=0.9)
     parser.add_argument("-a", "--alfa",             help="set PSO alfa parameter, default is 2.0", type=float, default=2)
@@ -47,6 +48,16 @@ def main():
     parser.add_argument("-d", "--distances",        help="list of distances between target areas to be evaluated each generation, default is 0.7 0.9 1.1 1.3 1.5", type=float, nargs='+', default=[0.7, 0.9, 1.1, 1.3, 1.5])
     parser.add_argument("-t", "--trials",           help="number of trials per distance, default is 3", type=int, default=3)
     args = parser.parse_args()
+
+    if args.verbosity >= 2:
+        __log__.setLevel(logging.DEBUG)
+    elif args.verbosity == 1:
+        __log__.setLevel(logging.INFO)
+    else:
+        __log__.setLevel(logging.WARNING)
+
+    if args.quiet:
+        __log__.setLevel(logging.ERROR)
 
     uri = os.environ.get('SOLACE_URI')
     username = os.environ.get('SOLACE_USERNAME')
