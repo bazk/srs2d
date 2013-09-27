@@ -1,5 +1,5 @@
 *.pyc
 *.swp
-srs2d.egg-info
-*.sublime-workspace
-*.sublime-project
+dist
+build
+*.egg-info
