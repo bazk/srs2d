@@ -37,6 +37,9 @@ setup(
     url='http://github.com/eburatti09/srs2d',
     download_url='http://github.com/eburatti09/srs2d',
     packages=['srs2d'],
+    package_data = {
+        'srs2d': ['kernels/*.cl']
+    },
     scripts=[],
     test_suite='tests',
     install_requires=[],
