@@ -20,19 +20,19 @@
 #define NUM_ACTUATORS   4
 #define NUM_HIDDEN      3
 
-#define IN_camera0      0
-#define IN_camera1      1
-#define IN_camera2      2
-#define IN_camera3      3
-#define IN_proximity0   4
-#define IN_proximity1   5
-#define IN_proximity2   6
-#define IN_proximity3   7
-#define IN_proximity4   8
-#define IN_proximity5   9
-#define IN_proximity6  10
-#define IN_proximity7  11
-#define IN_ground      12
+#define IN_proximity0   1
+#define IN_proximity1   2
+#define IN_proximity2   4
+#define IN_proximity3   8
+#define IN_proximity4   16
+#define IN_proximity5   32
+#define IN_proximity6   64
+#define IN_proximity7   128
+#define IN_camera0      256
+#define IN_camera1      512
+#define IN_camera2      1024
+#define IN_camera3      2048
+#define IN_ground       4096
 
 #define OUT_wheels0     0
 #define OUT_wheels1     1
@@ -63,7 +63,7 @@ typedef struct {
     float fitness;
     int last_target_area;
 
-    float sensors[NUM_SENSORS];
+    unsigned int sensors;
     float actuators[NUM_ACTUATORS];
     float hidden[NUM_HIDDEN];
 } robot_t;
@@ -94,8 +94,6 @@ typedef struct {
     float timec_hidden[NUM_HIDDEN];
 } world_t;
 
-// TODO: obstacles
-
 __kernel void size_of_world_t(__global int *result)
 {
     *result = (int) sizeof(world_t);
@@ -115,6 +113,11 @@ float2 transform_mul_vec(transform_t t, float2 v)
     return res;
 }
 
+unsigned int uint_exp2(unsigned int n)
+{
+    return (unsigned int) exp2((float) n);
+}
+
 float sigmoid(float z)
 {
     return 1 / (1 + exp(-z));
@@ -128,51 +131,145 @@ __kernel void test_sigmoid(__global float *z)
     *z = distance(p1, p2);
 }
 
-float raycast(__global robot_t *robots, float2 p1, float2 p2)
+bool raycast(__global world_t *worlds, float2 p1, float2 p2)
 {
-    int world = get_global_id(0);
-    int robot = get_global_id(1);
-    int id = world * ROBOTS_PER_WORLD + robot;
+    int wid = get_global_id(0);
+    int rid = get_global_id(1);
 
-    unsigned int i, other;
-    float ray_dist = distance(p1, p2);
-    float min = ray_dist;
-    float2 d = {p2.x - p1.x, p2.y - p1.y}; // vector of ray, from start to end
-    float a = (d.x * d.x) + (d.y * d.y);   // d dot d
+    unsigned int otherid;
 
-    for (i = 0; i < ROBOTS_PER_WORLD; i++)
+    float2 ray = {p2.x - p1.x, p2.y - p1.y};
+    float ray_length = length(ray);
+    float2 ray_unit = {ray.x / ray_length, ray.y / ray_length};
+
+    for (otherid = 0; otherid < ROBOTS_PER_WORLD; otherid++)
     {
-        other = world * ROBOTS_PER_WORLD + i;
-
-        if (id == other)
+        if (rid == otherid)
             continue;
 
-        float dist = distance(p1, robots[other].transform.pos);
+        float dist = distance(p1, worlds[wid].robots[otherid].transform.pos);
 
-        if (dist < ray_dist + ROBOT_BODY_RADIUS, 2)
+        if (dist < ray_length + ROBOT_BODY_RADIUS)
         {
-            float2 f = {p1.x - robots[other].transform.pos.x,
-                        p1.y - robots[other].transform.pos.y }; // vector from center sphere to ray start
+            float2 v1 = { worlds[wid].robots[otherid].transform.pos.x - p1.x,
+                          worlds[wid].robots[otherid].transform.pos.y - p1.y };
 
-            float b = 2 * ((f.x * d.x) + (f.y * d.y)); // f dot d
-            float c = ((f.x * f.x) + (f.y * f.y)) - ROBOT_BODY_RADIUS*ROBOT_BODY_RADIUS; // f dot f - r**2
+            float proj = v1.x * ray_unit.x + v1.y * ray_unit.y;
 
-            float discriminant = (b*b - 4*a*c);
+            if ((proj > 0) && (proj < ray_length)) {
+                float2 d = {ray_unit.x * proj, ray_unit.y * proj};
+                d.x += p1.x;
+                d.y += p1.y;
 
-            if (discriminant < 0)
-                continue;
-
-            discriminant = sqrt(discriminant);
-            float x1 = (-b - discriminant) / (2*a);
-            float x2 = (-b + discriminant) / (2*a);
-
-            if ((x1 >= 0 && x1 <= 1) || (x2 >= 0 && x2 <= 1))
-                if (dist < min)
-                    min = dist;
+                if (distance(d, worlds[wid].robots[otherid].transform.pos) < ROBOT_BODY_RADIUS)
+                    return true;
+            }
         }
     }
 
-    return min;
+    return false;
+}
+
+int _raycast(__global world_t *worlds)
+{
+    float2 front = {(ROBOT_BODY_RADIUS + LED_PROTUBERANCE), 0};
+
+    float2 orig = worlds[0].robots[0].transform.pos;
+    float angle_robot = atan2(worlds[0].robots[0].transform.rot.sin, worlds[0].robots[0].transform.rot.cos);
+
+    float2 dest = transform_mul_vec(worlds[0].robots[2].transform, front);
+    float d = distance(orig, dest);
+
+    if (d < CAMERA_RADIUS)
+    {
+        float angle_dest = atan2(dest.y - orig.y, dest.x - orig.x);
+
+        if ( (angle_robot > angle_dest) &&
+             ((angle_robot-angle_dest) <= (CAMERA_ANGLE/2)) )
+        {
+            if (!raycast(worlds, orig, dest))
+                return 1;
+        }
+        else if ( (angle_dest > angle_robot) &&
+                  ((angle_dest-angle_robot) <= (CAMERA_ANGLE/2)) )
+        {
+            if (!raycast(worlds, orig, dest))
+                return 2;
+        }
+    }
+
+    return 0;
+}
+
+__kernel void test_raycast(__global world_t *worlds, __global int *result)
+{
+    worlds[0].robots[0].transform.pos.x = 0;
+    worlds[0].robots[0].transform.pos.y = 0;
+    worlds[0].robots[0].transform.rot.sin = 0;
+    worlds[0].robots[0].transform.rot.cos = 1;
+
+    worlds[0].robots[1].transform.pos.x = .15;
+    worlds[0].robots[1].transform.pos.y = -.10;
+    worlds[0].robots[1].transform.rot.sin = 0;
+    worlds[0].robots[1].transform.rot.cos = 1;
+
+    worlds[0].robots[2].transform.pos.x = .20;
+    worlds[0].robots[2].transform.pos.y = .10;
+    worlds[0].robots[2].transform.rot.sin = -1;
+    worlds[0].robots[2].transform.rot.cos = 0;
+
+    result[0] = _raycast(worlds);
+
+    worlds[0].robots[0].transform.pos.x = 0;
+    worlds[0].robots[0].transform.pos.y = 0;
+    worlds[0].robots[0].transform.rot.sin = 0;
+    worlds[0].robots[0].transform.rot.cos = 1;
+
+    worlds[0].robots[1].transform.pos.x = .10;
+    worlds[0].robots[1].transform.pos.y = .03;
+    worlds[0].robots[1].transform.rot.sin = 0;
+    worlds[0].robots[1].transform.rot.cos = 1;
+
+    worlds[0].robots[2].transform.pos.x = .20;
+    worlds[0].robots[2].transform.pos.y = .10;
+    worlds[0].robots[2].transform.rot.sin = -1;
+    worlds[0].robots[2].transform.rot.cos = 0;
+
+    result[1] = _raycast(worlds);
+
+    worlds[0].robots[0].transform.pos.x = 0;
+    worlds[0].robots[0].transform.pos.y = 0;
+    worlds[0].robots[0].transform.rot.sin = 0;
+    worlds[0].robots[0].transform.rot.cos = 1;
+
+    worlds[0].robots[1].transform.pos.x = .15,
+    worlds[0].robots[1].transform.pos.y = .03;
+    worlds[0].robots[1].transform.rot.sin = 0;
+    worlds[0].robots[1].transform.rot.cos = 1;
+
+    worlds[0].robots[2].transform.pos.x = .05;
+    worlds[0].robots[2].transform.pos.y = .20;
+    worlds[0].robots[2].transform.rot.sin = -1;
+    worlds[0].robots[2].transform.rot.cos = 0;
+
+    result[2] = _raycast(worlds);
+
+    worlds[0].robots[0].transform.pos.x = 0;
+    worlds[0].robots[0].transform.pos.y = 0;
+    worlds[0].robots[0].transform.rot.sin = 1;
+    worlds[0].robots[0].transform.rot.cos = 0;
+
+    worlds[0].robots[1].transform.pos.x = -.04,
+    worlds[0].robots[1].transform.pos.y = -.10;
+    worlds[0].robots[1].transform.rot.sin = 0;
+    worlds[0].robots[1].transform.rot.cos = 1;
+
+    worlds[0].robots[2].transform.pos.x = .05;
+    worlds[0].robots[2].transform.pos.y = .20;
+    worlds[0].robots[2].transform.rot.sin = -1;
+    worlds[0].robots[2].transform.rot.cos = 0;
+
+    result[3] = _raycast(worlds);
 }
 
 __kernel void set_random_position(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
@@ -279,8 +376,7 @@ __kernel void init_robots(__global ranluxcl_state_t *ranluxcltab, __global world
     worlds[wid].robots[rid].fitness = 0.0;
     worlds[wid].robots[rid].last_target_area = -1;
 
-    for (i=0; i<NUM_SENSORS; i++)
-        worlds[wid].robots[rid].sensors[i] = 0;
+    worlds[wid].robots[rid].sensors = 0;
 
     for (i=0; i<NUM_ACTUATORS; i++)
         worlds[wid].robots[rid].actuators[i] = 0;
@@ -329,7 +425,7 @@ __kernel void step_controllers(__global ranluxcl_state_t *ranluxcltab, __global 
 
         for (s=0; s<NUM_SENSORS; s++)
             aux += worlds[wid].weights_hidden[h*NUM_HIDDEN+s] *
-                  worlds[wid].robots[rid].sensors[s] + worlds[wid].bias_hidden[h];
+                  ((worlds[wid].robots[rid].sensors & uint_exp2(s) == 0) ? 0 : 1) + worlds[wid].bias_hidden[h];
 
         worlds[wid].robots[rid].hidden[h] = worlds[wid].timec_hidden[h] * worlds[wid].robots[rid].hidden[h] +
               (1 - worlds[wid].timec_hidden[h]) * sigmoid(aux);
@@ -340,7 +436,7 @@ __kernel void step_controllers(__global ranluxcl_state_t *ranluxcltab, __global 
         aux = 0;
 
         for (s=0; s<NUM_SENSORS; s++)
-            aux += worlds[wid].weights[a*NUM_ACTUATORS+s] * worlds[wid].robots[rid].sensors[s];
+            aux += worlds[wid].weights[a*NUM_ACTUATORS+s] * ((worlds[wid].robots[rid].sensors & uint_exp2(s) == 0) ? 0 : 1);
 
         for (h=0; h<NUM_HIDDEN; h++)
             aux += worlds[wid].weights[a*NUM_ACTUATORS+h+NUM_SENSORS] * worlds[wid].robots[rid].hidden[h];
@@ -369,11 +465,11 @@ __kernel void step_dynamics(__global ranluxcl_state_t *ranluxcltab, __global wor
 
     if (worlds[wid].robots[rid].collision != 0) {
         set_random_position(ranluxcltab, worlds);
+        worlds[wid].robots[rid].collision = 0;
         worlds[wid].robots[rid].wheels_angular_speed.s0 = 0;
         worlds[wid].robots[rid].wheels_angular_speed.s1 = 0;
         worlds[wid].robots[rid].front_led = 0;
         worlds[wid].robots[rid].rear_led = 0;
-        worlds[wid].robots[rid].collision = 0;
         worlds[wid].robots[rid].energy = 2;
         worlds[wid].robots[rid].fitness = 0.0;
         worlds[wid].robots[rid].last_target_area = -1;
@@ -406,8 +502,7 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
 
     unsigned int i, otherid;
 
-    for (i = 0; i < NUM_SENSORS; i++)
-        worlds[wid].robots[rid].sensors[i] = 0.0;
+    worlds[wid].robots[rid].sensors = 0;
 
     if ( ((worlds[wid].robots[rid].transform.pos.x+ROBOT_BODY_RADIUS) > (worlds[wid].arena_width/2)) ||
          ((worlds[wid].robots[rid].transform.pos.x-ROBOT_BODY_RADIUS) < (-worlds[wid].arena_width/2)) ||
@@ -441,7 +536,7 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
                 a += 2*M_PI;
 
             int idx = (int) floor(fabs(a) / (2*M_PI/8)) % 8;
-            worlds[wid].robots[rid].sensors[IN_proximity0+idx] = 1 - ((dist - 2*ROBOT_BODY_RADIUS) / IR_RADIUS);
+            worlds[wid].robots[rid].sensors |= uint_exp2(idx);
         }
 
         if (dist < CAMERA_RADIUS + ROBOT_BODY_RADIUS + LED_PROTUBERANCE)
@@ -455,20 +550,23 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
             if (worlds[wid].robots[otherid].front_led == 1)
             {
                 float2 dest = transform_mul_vec(worlds[wid].robots[otherid].transform, front);
+                float d = distance(orig, dest);
 
-                if (distance(orig, dest) < CAMERA_RADIUS)
+                if (d < CAMERA_RADIUS)
                 {
                     float angle_dest = atan2(dest.y - orig.y, dest.x - orig.x);
 
                     if ( (angle_robot > angle_dest) &&
                          ((angle_robot-angle_dest) <= (CAMERA_ANGLE/2)) )
                     {
-                        worlds[wid].robots[rid].sensors[IN_camera0] = 1 - (raycast(worlds[wid].robots, orig, dest) / CAMERA_RADIUS);
+                        if (!raycast(worlds, orig, dest))
+                            worlds[wid].robots[rid].sensors |= IN_camera0;
                     }
                     else if ( (angle_dest > angle_robot) &&
                               ((angle_dest-angle_robot) <= (CAMERA_ANGLE/2)) )
                     {
-                        worlds[wid].robots[rid].sensors[IN_camera1] = 1 - (raycast(worlds[wid].robots, orig, dest) / CAMERA_RADIUS);
+                        if (!raycast(worlds, orig, dest))
+                            worlds[wid].robots[rid].sensors |= IN_camera1;
                     }
                 }
             }
@@ -476,27 +574,28 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
             if (worlds[wid].robots[otherid].rear_led == 1)
             {
                 float2 dest = transform_mul_vec(worlds[wid].robots[otherid].transform, rear);
+                float d = distance(orig, dest);
 
-                if (distance(orig, dest) < CAMERA_RADIUS)
+                if (d < CAMERA_RADIUS)
                 {
                     float angle_dest = atan2(dest.y - orig.y, dest.x - orig.x);
 
                     if ( (angle_robot > angle_dest) &&
                          ((angle_robot-angle_dest) <= (CAMERA_ANGLE/2)) )
                     {
-                        worlds[wid].robots[rid].sensors[IN_camera2] = 1 - (raycast(worlds[wid].robots, orig, dest) / CAMERA_RADIUS);
+                        if (!raycast(worlds, orig, dest))
+                            worlds[wid].robots[rid].sensors |= IN_camera2;
                     }
                     else if ( (angle_dest > angle_robot) &&
                          ((angle_dest-angle_robot) <= (CAMERA_ANGLE/2)) )
                     {
-                        worlds[wid].robots[rid].sensors[IN_camera3] = 1 - (raycast(worlds[wid].robots, orig, dest) / CAMERA_RADIUS);
+                        if (!raycast(worlds, orig, dest))
+                            worlds[wid].robots[rid].sensors |= IN_camera3;
                     }
                 }
             }
         }
     }
-
-    worlds[wid].robots[rid].sensors[IN_ground] = 0;
 
     for (i = 0; i < 2; i++)
     {
@@ -504,7 +603,7 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
 
         if (dist < worlds[wid].target_areas[i].radius)
         {
-            worlds[wid].robots[rid].sensors[IN_ground] = 1;
+            worlds[wid].robots[rid].sensors |= IN_ground;
 
             if (worlds[wid].robots[rid].last_target_area < 0)
             {
@@ -625,4 +724,21 @@ __kernel void set_energy(__global world_t *worlds, float energy)
     int rid = get_global_id(1);
 
     worlds[wid].robots[rid].energy = energy;
+}
+
+__kernel void get_ann_state(__global world_t *worlds, __global unsigned int *sensors, __global float4 *actuators, __global float4 *hidden)
+{
+    int wid = get_global_id(0);
+    int rid = get_global_id(1);
+
+    sensors[wid*ROBOTS_PER_WORLD+rid] = worlds[wid].robots[rid].sensors;
+
+    actuators[wid*ROBOTS_PER_WORLD+rid].s0 = worlds[wid].robots[rid].actuators[OUT_wheels0];
+    actuators[wid*ROBOTS_PER_WORLD+rid].s1 = worlds[wid].robots[rid].actuators[OUT_wheels1];
+    actuators[wid*ROBOTS_PER_WORLD+rid].s2 = worlds[wid].robots[rid].actuators[OUT_front_led];
+    actuators[wid*ROBOTS_PER_WORLD+rid].s3 = worlds[wid].robots[rid].actuators[OUT_rear_led];
+
+    hidden[wid*ROBOTS_PER_WORLD+rid].s0 = worlds[wid].robots[rid].hidden[HID_hidden0];
+    hidden[wid*ROBOTS_PER_WORLD+rid].s1 = worlds[wid].robots[rid].hidden[HID_hidden1];
+    hidden[wid*ROBOTS_PER_WORLD+rid].s2 = worlds[wid].robots[rid].hidden[HID_hidden2];
 }

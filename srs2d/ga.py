@@ -36,19 +36,21 @@ NUM_SENSORS     = 13
 NUM_ACTUATORS   = 4
 NUM_HIDDEN      = 3
 
-STEPS_TA = 600
+STEPS_TA = 18600
 STEPS_TB = 5400
 
-NUM_GENERATIONS = 1000
-NUM_RUNS = 10
+NUM_GENERATIONS = 500
+NUM_RUNS = 3
 NUM_ROBOTS = 10
 POPULATION_SIZE = 120
 
-D = [0.9, 1.1, 1.3]
+D = [0.7, 0.9, 1.1, 1.3, 1.5]
+# D = [0.9, 1.1, 1.3]
+# D = [1.1]
 
 PCROSSOVER = 0.9
 PMUTATION = 0.03
-ELITE_SIZE = 20
+ELITE_SIZE = 24
 
 class GA(object):
     def __init__(self, context, queue):
@@ -184,17 +186,25 @@ class GA(object):
         simulator.init_worlds(distance)
 
         arena, target_areas, target_areas_radius = simulator.get_world_transforms()
-        save.add_square(.0, .0, arena[0][0], arena[0][1])
-        save.add_circle(target_areas[0][0], target_areas[0][1], target_areas_radius[0][0], .0, .1)
-        save.add_circle(target_areas[0][2], target_areas[0][3], target_areas_radius[0][1], .0, .1)
+        save.add_object('arena', io.SHAPE_RECTANGLE, x=0.0, y=0.0, width=arena[0][0], height=arena[0][1])
+        save.add_object('target0', io.SHAPE_CIRCLE, x=target_areas[0][0], y=target_areas[0][1], radius=target_areas_radius[0][0], sin=0.0, cos=0.1)
+        save.add_object('target1', io.SHAPE_CIRCLE, x=target_areas[0][2], y=target_areas[0][3], radius=target_areas_radius[0][1], sin=0.0, cos=0.1)
 
         fitene = simulator.get_individual_fitness_energy()
+        sensors, actuators, hidden = simulator.get_ann_state()
         transforms, radius = simulator.get_transforms()
         robot_radius = radius[0][0]
 
         robot_obj = [ None for i in range(len(transforms)) ]
         for i in range(len(transforms)):
-            robot_obj[i] = save.add_circle(transforms[i][0], transforms[i][1], robot_radius, transforms[i][2], transforms[i][3], opt1=fitene[i][0], opt2=fitene[i][1])
+            robot_obj[i] = save.add_object('robot'+str(i), io.SHAPE_CIRCLE,
+                x=transforms[i][0], y=transforms[i][1], radius=robot_radius,
+                sin=transforms[i][2], cos=transforms[i][3],
+                fitness=fitene[i][0], energy=fitene[i][1],
+                sensors=sensors[i],
+                wheels0=actuators[i][0], wheels1=actuators[i][1],
+                front_led=actuators[i][2], rear_led=actuators[i][3],
+                hidden0=hidden[i][0], hidden1=hidden[i][1], hidden2=hidden[i][2])
 
         current_step = 0
         while current_step < (STEPS_TA + STEPS_TB):
@@ -205,9 +215,18 @@ class GA(object):
                 simulator.set_energy(2)
 
             fitene = simulator.get_individual_fitness_energy()
+            sensors, actuators, hidden = simulator.get_ann_state()
             transforms, radius = simulator.get_transforms()
             for i in range(len(transforms)):
-                robot_obj[i].update(transforms[i][0], transforms[i][1], robot_radius, transforms[i][2], transforms[i][3], opt1=fitene[i][0], opt2=fitene[i][1])
+                robot_obj[i].update(
+                    x=transforms[i][0], y=transforms[i][1],
+                    sin=transforms[i][2], cos=transforms[i][3],
+                    fitness=fitene[i][0], energy=fitene[i][1],
+                    sensors=sensors[i],
+                    wheels0=actuators[i][0], wheels1=actuators[i][1],
+                    front_led=actuators[i][2], rear_led=actuators[i][3],
+                    hidden0=hidden[i][0], hidden1=hidden[i][1], hidden2=hidden[i][2])
+
             save.frame()
             current_step += 1
 

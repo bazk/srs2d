@@ -38,6 +38,35 @@ NUM_ACTUATORS = 4
 NUM_HIDDEN = 3
 
 class Simulator(object):
+    @staticmethod
+    def test_raycast():
+        context = cl.create_some_context()
+        queue = cl.CommandQueue(context)
+
+        options = '-DROBOTS_PER_WORLD=%d -DTIME_STEP=%f -DTA=%f -DTB=%f -DDYNAMICS_ITERATIONS=%d' % (3, 1/10.0, 600, 5400, 4)
+
+        src = open(os.path.join(os.path.dirname(__file__), 'kernels/physics.cl'), 'r')
+        prg = cl.Program(context, src.read()).build(options=options)
+
+        # query the structs sizes
+        sizeof = np.zeros(1, dtype=np.int32)
+        sizeof_buf = cl.Buffer(context, 0, 4)
+
+        prg.size_of_world_t(queue, (1,), None, sizeof_buf).wait()
+        cl.enqueue_copy(queue, sizeof, sizeof_buf)
+        sizeof_world_t = int(sizeof[0])
+
+        # create buffers
+        worlds = cl.Buffer(context, 0, sizeof_world_t)
+
+        results = np.zeros(4, dtype=np.int32)
+        results_buf = cl.Buffer(context, cl.mem_flags.COPY_HOST_PTR, hostbuf=results)
+
+        prg.test_raycast(queue, (1,), None, worlds, results_buf).wait()
+        cl.enqueue_copy(queue, results, results_buf)
+
+        print results
+
     def __init__(self, context, queue, num_worlds=1, num_robots=9, ta=600, tb=5400, time_step=1/10.0, dynamics_iterations=4):
         global NUM_INPUTS, NUM_OUTPUTS
 
@@ -206,6 +235,23 @@ class Simulator(object):
         kernel = self.prg.set_energy
         kernel.set_scalar_arg_dtypes((None, np.float32))
         kernel(self.queue, self.global_size, self.local_size, self.worlds, energy).wait()
+
+    def get_ann_state(self):
+        sensors = np.zeros(self.num_worlds * self.num_robots, dtype=np.uint32)
+        actuators = np.zeros(self.num_worlds * self.num_robots, dtype=np.dtype((np.float32, (4,))))
+        hidden = np.zeros(self.num_worlds * self.num_robots, dtype=np.dtype((np.float32, (4,))))
+
+        sensors_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=sensors)
+        actuators_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=actuators)
+        hidden_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=hidden)
+
+        self.prg.get_ann_state(self.queue, self.global_size, self.local_size, self.worlds, sensors_buf, actuators_buf, hidden_buf).wait()
+
+        cl.enqueue_copy(self.queue, sensors, sensors_buf)
+        cl.enqueue_copy(self.queue, actuators, actuators_buf)
+        cl.enqueue_copy(self.queue, hidden, hidden_buf)
+
+        return sensors, actuators, hidden
 
 class ANNParametersArray(object):
     def __init__(self, randomize=False, weights_boundary=(-5.0, 5.0), bias_boundary=(-5.0, 5.0), timec_boundary=(0, 1.0)):
