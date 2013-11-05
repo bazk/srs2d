@@ -27,9 +27,6 @@ import numpy as np
 import pyopencl as cl
 import pyopencl.characterize
 import logging.config
-import logconfig
-
-logging.config.dictConfig(logconfig.LOGGING)
 
 __log__ = logging.getLogger(__name__)
 

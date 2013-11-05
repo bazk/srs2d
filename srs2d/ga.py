@@ -24,12 +24,10 @@ import logging
 import physics
 import pyopencl as cl
 import logging.config
-import logconfig
 import solace
 import io
 
-logging.config.dictConfig(logconfig.LOGGING)
-
+logging.basicConfig(format='[ %(asctime)s ] [%(levelname)s] %(message)s')
 __log__ = logging.getLogger(__name__)
 
 NUM_SENSORS     = 13
