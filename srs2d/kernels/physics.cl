@@ -115,7 +115,8 @@ float2 transform_mul_vec(transform_t t, float2 v)
 
 unsigned int uint_exp2(unsigned int n)
 {
-    return (unsigned int) exp2((float) n);
+
+    return floor(exp2((float) n));
 }
 
 float sigmoid(float z)
@@ -425,7 +426,9 @@ __kernel void step_controllers(__global ranluxcl_state_t *ranluxcltab, __global 
 
         for (s=0; s<NUM_SENSORS; s++)
             aux += worlds[wid].weights_hidden[h*NUM_HIDDEN+s] *
-                  ((worlds[wid].robots[rid].sensors & uint_exp2(s) == 0) ? 0 : 1) + worlds[wid].bias_hidden[h];
+                  ( ((worlds[wid].robots[rid].sensors & uint_exp2(s)) == 0) ? 0 : 1 );
+
+        aux += worlds[wid].bias_hidden[h];
 
         worlds[wid].robots[rid].hidden[h] = worlds[wid].timec_hidden[h] * worlds[wid].robots[rid].hidden[h] +
               (1 - worlds[wid].timec_hidden[h]) * sigmoid(aux);
@@ -436,7 +439,7 @@ __kernel void step_controllers(__global ranluxcl_state_t *ranluxcltab, __global 
         aux = 0;
 
         for (s=0; s<NUM_SENSORS; s++)
-            aux += worlds[wid].weights[a*NUM_ACTUATORS+s] * ((worlds[wid].robots[rid].sensors & uint_exp2(s) == 0) ? 0 : 1);
+            aux += worlds[wid].weights[a*NUM_ACTUATORS+s] * ( ((worlds[wid].robots[rid].sensors & uint_exp2(s)) == 0) ? 0 : 1 );
 
         for (h=0; h<NUM_HIDDEN; h++)
             aux += worlds[wid].weights[a*NUM_ACTUATORS+h+NUM_SENSORS] * worlds[wid].robots[rid].hidden[h];
