@@ -396,16 +396,16 @@ __kernel void set_ann_parameters(__global ranluxcl_state_t *ranluxcltab, __globa
 
     for (i=0; i<NUM_ACTUATORS; i++)
     {
-        for (j=0; j<NUM_SENSORS+NUM_HIDDEN; j++)
-            worlds[wid].weights[i*NUM_ACTUATORS+j] = weights[i*NUM_ACTUATORS+j];
+        for (j=0; j<(NUM_SENSORS+NUM_HIDDEN); j++)
+            worlds[wid].weights[i*(NUM_SENSORS+NUM_HIDDEN)+j] = weights[i*(NUM_SENSORS+NUM_HIDDEN)+j];
 
-        worlds[wid].bias[i] = weights[i];
+        worlds[wid].bias[i] = bias[i];
     }
 
     for (i=0; i<NUM_HIDDEN; i++)
     {
         for (j=0; j<NUM_SENSORS; j++)
-            worlds[wid].weights_hidden[i*NUM_HIDDEN+j] = weights_hidden[i*NUM_HIDDEN+j];
+            worlds[wid].weights_hidden[i*NUM_SENSORS+j] = weights_hidden[i*NUM_SENSORS+j];
 
         worlds[wid].bias_hidden[i] = bias_hidden[i];
         worlds[wid].timec_hidden[i] = timec_hidden[i];
@@ -425,7 +425,7 @@ __kernel void step_controllers(__global ranluxcl_state_t *ranluxcltab, __global 
         aux = 0;
 
         for (s=0; s<NUM_SENSORS; s++)
-            aux += worlds[wid].weights_hidden[h*NUM_HIDDEN+s] *
+            aux += worlds[wid].weights_hidden[h*NUM_SENSORS+s] *
                   ( ((worlds[wid].robots[rid].sensors & uint_exp2(s)) == 0) ? 0 : 1 );
 
         aux += worlds[wid].bias_hidden[h];
@@ -439,10 +439,10 @@ __kernel void step_controllers(__global ranluxcl_state_t *ranluxcltab, __global 
         aux = 0;
 
         for (s=0; s<NUM_SENSORS; s++)
-            aux += worlds[wid].weights[a*NUM_ACTUATORS+s] * ( ((worlds[wid].robots[rid].sensors & uint_exp2(s)) == 0) ? 0 : 1 );
+            aux += worlds[wid].weights[a*(NUM_SENSORS+NUM_HIDDEN)+s] * ( ((worlds[wid].robots[rid].sensors & uint_exp2(s)) == 0) ? 0 : 1 );
 
         for (h=0; h<NUM_HIDDEN; h++)
-            aux += worlds[wid].weights[a*NUM_ACTUATORS+h+NUM_SENSORS] * worlds[wid].robots[rid].hidden[h];
+            aux += worlds[wid].weights[a*(NUM_SENSORS+NUM_HIDDEN)+NUM_SENSORS+h] * worlds[wid].robots[rid].hidden[h];
 
         aux += worlds[wid].bias[a];
 
