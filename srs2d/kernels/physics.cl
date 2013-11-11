@@ -620,6 +620,31 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
                 worlds[wid].robots[rid].last_target_area = i;
             }
         }
+
+        if (dist < CAMERA_RADIUS + ROBOT_BODY_RADIUS)
+        {
+            float2 orig = worlds[wid].robots[rid].transform.pos;
+            float2 dest = worlds[wid].target_areas[i].center;
+            float angle_robot = atan2(worlds[wid].robots[rid].transform.rot.sin, worlds[wid].robots[rid].transform.rot.cos);
+
+            if (distance(orig, dest) < CAMERA_RADIUS)
+            {
+                float angle_dest = atan2(dest.y - orig.y, dest.x - orig.x);
+
+                if ( (angle_robot > angle_dest) &&
+                     ((angle_robot-angle_dest) <= (CAMERA_ANGLE/2)) )
+                {
+                    if (!raycast(worlds, orig, dest))
+                        worlds[wid].robots[rid].sensors |= IN_camera2;
+                }
+                else if ( (angle_dest > angle_robot) &&
+                     ((angle_dest-angle_robot) <= (CAMERA_ANGLE/2)) )
+                {
+                    if (!raycast(worlds, orig, dest))
+                        worlds[wid].robots[rid].sensors |= IN_camera3;
+                }
+            }
+        }
     }
 
     worlds[wid].robots[rid].energy -= (fabs(worlds[wid].robots[rid].wheels_angular_speed.s0) + fabs(worlds[wid].robots[rid].wheels_angular_speed.s1)) /
