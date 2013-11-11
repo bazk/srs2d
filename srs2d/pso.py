@@ -27,6 +27,7 @@ import pyopencl as cl
 import logging.config
 import solace
 import io
+import png
 
 logging.basicConfig(format='[ %(asctime)s ] [%(levelname)s] %(message)s')
 __log__ = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ def main():
     parser.add_argument("-v", "--verbosity",        help="increase output verbosity", action="count")
     parser.add_argument("-q", "--quiet",            help="supress output (except errors)", action="store_true")
     parser.add_argument("--no-save",                help="skip saving best fitness simulation", action="store_true")
+    parser.add_argument("--image",                  help="generate and upload an image representing current particle population", action="store_true")
     parser.add_argument("-w", "--inertia",          help="set PSO inertia (W) parameter, default is 0.9", type=float, default=0.9)
     parser.add_argument("-a", "--alfa",             help="set PSO alfa parameter, default is 2.0", type=float, default=2)
     parser.add_argument("-b", "--beta",             help="set PSO beta parameter, default is 2.0", type=float, default=2)
@@ -142,9 +144,15 @@ class PSO(object):
                         args.num_robots, args.distances[ random.randint(0, len(args.distances)-1) ])
 
                     run.upload('/tmp/simulation.srs', 'run-%02d-new-gbest-gen-%04d-fit-%.5f.srs' % (run.id, generation, fit))
+                    os.remove('/tmp/simulation.srs')
 
             else:
                 run.progress(generation / float(args.num_generations), {'generation': generation})
+
+            if args.image:
+                self.generate_image('/tmp/image.png')
+                run.upload('/tmp/image.png', 'image-run-%02d-gen-%04d.png' % (run.id, generation))
+                os.remove('/tmp/image.png')
 
             generation += 1
 
@@ -230,6 +238,45 @@ class PSO(object):
         save.close()
 
         return simulator.get_fitness()[0]
+
+    def generate_image(self, filename, block_width=8, block_height=8):
+        blocks = [ [] for p in xrange(len(self.particles)) ]
+        pixels = []
+
+        for p in xrange(len(self.particles)):
+            pos = self.particles[p].position
+            w = pos.to_dict()
+
+            for v in w['weights']:
+                f = (v - pos.weights_boundary[0]) / (pos.weights_boundary[1] - pos.weights_boundary[0])
+                blocks[p].append(int(255 * f))
+
+            for v in w['bias']:
+                f = (v - pos.bias_boundary[0]) / (pos.bias_boundary[1] - pos.bias_boundary[0])
+                blocks[p].append(int(255 * f))
+
+            for v in w['weights_hidden']:
+                f = (v - pos.weights_boundary[0]) / (pos.weights_boundary[1] - pos.weights_boundary[0])
+                blocks[p].append(int(255 * f))
+
+            for v in w['bias_hidden']:
+                f = (v - pos.bias_boundary[0]) / (pos.bias_boundary[1] - pos.bias_boundary[0])
+                blocks[p].append(int(255 * f))
+
+            for v in w['timec_hidden']:
+                f = (v - pos.timec_boundary[0]) / (pos.timec_boundary[1] - pos.timec_boundary[0])
+                blocks[p].append(int(255 * f))
+
+        for i in xrange(len(blocks[0])):
+            line = []
+            for b in blocks:
+                for x in xrange(block_width):
+                    line.append(b[i])
+
+            for y in xrange(block_height):
+                pixels.append(line)
+
+        png.from_array(pixels, 'L').save(filename)
 
 class Particle(object):
     def __init__(self, inertia=0.9, alfa=2.0, beta=2.0):
