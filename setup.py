@@ -29,7 +29,7 @@ except ImportError:
 
 setup(
     name='srs2d',
-    version='0.2',
+    version='0.0.3',
     description='Swarm Robotics Simulator 2D',
     license='GPLv3',
     author='Eduardo L. Buratti',
