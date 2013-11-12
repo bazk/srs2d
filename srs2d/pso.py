@@ -28,6 +28,7 @@ import logging.config
 import solace
 import io
 import png
+import subprocess
 
 logging.basicConfig(format='[ %(asctime)s ] [%(levelname)s] %(message)s')
 __log__ = logging.getLogger(__name__)
@@ -65,6 +66,11 @@ def main():
     username = os.environ.get('SOLACE_USERNAME')
     password = os.environ.get('SOLACE_PASSWORD')
 
+    try:
+        git_version = subprocess.check_output('git describe --tags --long'.split(), stderr=subprocess.STDOUT).replace('\n', '')
+    except:
+        git_version = None
+
     if (uri is None) or (username is None) or (password is None):
         raise Exception('Environment variables (SOLACE_URI, SOLACE_USERNAME, SOLACE_PASSWORD) not set!')
 
@@ -84,7 +90,7 @@ def main():
         'POPULATION_SIZE': args.population_size,
         'D': args.distances,
         'TRIALS': args.trials,
-    })
+    }, code_version=git_version)
 
     for run in inst.runs:
         PSO(context, queue).execute(run, args)
