@@ -109,7 +109,7 @@ class GA(object):
         last_best_fitness = 0
 
         __log__.info('Calculating initial fitness...')
-        self.evaluate(self.population)
+        self.evaluate(self.population, args.distances)
         self.population = sorted(self.population, key=lambda ind: ind.fitness)
 
         generation = 1
@@ -148,7 +148,7 @@ class GA(object):
                 new_pop.append(last)
 
             __log__.info('[gen=%d] Evaluating population...', generation)
-            self.evaluate(new_pop)
+            self.evaluate(new_pop, args.distances)
             new_pop =  sorted(new_pop, key=lambda ind: ind.fitness)
 
             for i in xrange(args.elite_size):
@@ -178,7 +178,7 @@ class GA(object):
                             best.genome,
                             args.ta, args.tb,
                             args.num_robots,
-                            D[ random.randint(0, len(D)-1) ])
+                            args.distances[ random.randint(0, len(args.distances)-1) ])
                     run.upload('/tmp/simulation.srs', 'run-%02d-new-best-gen-%04d-fit-%.2f.srs' % (run.id, generation, fit) )
                     os.remove('/tmp/simulation.srs')
             else:
@@ -196,7 +196,7 @@ class GA(object):
     def select(self, population):
         return population.pop()
 
-    def evaluate(self, population):
+    def evaluate(self, population, distances):
         for i in xrange(len(population)):
             params = population[i].genome
             self.simulator.set_ann_parameters(i, params)
@@ -205,7 +205,7 @@ class GA(object):
         for i in xrange(len(population)):
             population[i].fitness = .0
 
-        for d in D:
+        for d in distances:
             for i in range(3):
                 self.simulator.init_worlds(d)
                 self.simulator.simulate()
@@ -215,7 +215,7 @@ class GA(object):
                     population[i].fitness += fit[i]
 
         for i in xrange(len(population)):
-            population[i].fitness /= len(D) * 3
+            population[i].fitness /= len(distances) * 3
 
     def simulate_and_save(self, filename, pos, ta, tb, num_robots, distance):
         simulator = physics.Simulator(self.context, self.queue,
