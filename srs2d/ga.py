@@ -278,6 +278,46 @@ class GA(object):
 
         return simulator.get_fitness()[0]
 
+    def generate_image(self, filename, block_width=8, block_height=8):
+        blocks = [ [] for p in xrange(len(self.population)) ]
+        pixels = []
+
+        for p in xrange(len(self.population)):
+            gen = self.population[p].genome
+            w = gen.to_dict()
+
+            for v in w['weights']:
+                f = (v - gen.weights_boundary[0]) / (gen.weights_boundary[1] - gen.weights_boundary[0])
+                blocks[p].append(int(255 * f))
+
+            for v in w['bias']:
+                f = (v - gen.bias_boundary[0]) / (gen.bias_boundary[1] - gen.bias_boundary[0])
+                blocks[p].append(int(255 * f))
+
+            for v in w['weights_hidden']:
+                f = (v - gen.weights_boundary[0]) / (gen.weights_boundary[1] - gen.weights_boundary[0])
+                blocks[p].append(int(255 * f))
+
+            for v in w['bias_hidden']:
+                f = (v - gen.bias_boundary[0]) / (gen.bias_boundary[1] - gen.bias_boundary[0])
+                blocks[p].append(int(255 * f))
+
+            for v in w['timec_hidden']:
+                f = (v - gen.timec_boundary[0]) / (gen.timec_boundary[1] - gen.timec_boundary[0])
+                blocks[p].append(int(255 * f))
+
+        for i in xrange(len(blocks[0])):
+            line = []
+            for b in blocks:
+                for x in xrange(block_width):
+                    line.append(b[i])
+
+            for y in xrange(block_height):
+                pixels.append(line)
+
+        png.from_array(pixels, 'L').save(filename)
+
+
 class Individual(object):
     def __init__(self):
         self.id = id(self)
