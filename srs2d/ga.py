@@ -19,6 +19,7 @@ __author__ = "Eduardo L. Buratti <eburatti09@gmail.com>"
 __date__ = "19 Sep 2013"
 
 import os
+import argparse
 import random
 import logging
 import physics
@@ -26,34 +27,171 @@ import pyopencl as cl
 import logging.config
 import solace
 import io
+import png
 
 logging.basicConfig(format='[ %(asctime)s ] [%(levelname)s] %(message)s')
 __log__ = logging.getLogger(__name__)
 
-NUM_SENSORS     = 13
-NUM_ACTUATORS   = 4
-NUM_HIDDEN      = 3
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-v", "--verbosity",        help="increase output verbosity", action="count")
+    parser.add_argument("-q", "--quiet",            help="supress output (except errors)", action="store_true")
+    parser.add_argument("--no-save",                help="skip saving best fitness simulation", action="store_true")
+    parser.add_argument("--image",                  help="generate and upload an image representing current particle population", action="store_true")
+    parser.add_argument("--ta",                     help="number of timesteps without fitness avaliation, default is 600", type=int, default=600)
+    parser.add_argument("--tb",                     help="number of timesteps with fitness avaliation, default is 5400", type=int, default=5400)
+    parser.add_argument("-g", "--num-generations",  help="number of generations, default is 500", type=int, default=500)
+    parser.add_argument("-r", "--num-runs",         help="number of runs, default is 3", type=int, default=3)
+    parser.add_argument("-n", "--num-robots",       help="number of robots, default is 10", type=int, default=10)
+    parser.add_argument("-p", "--population-size",  help="population size (genomes), default is 120", type=int, default=120)
+    parser.add_argument("-d", "--distances",        help="list of distances between target areas to be evaluated each generation, default is 0.7 0.9 1.1 1.3 1.5", type=float, nargs='+', default=[0.7, 0.9, 1.1, 1.3, 1.5])
+    parser.add_argument("-t", "--trials",           help="number of trials per distance, default is 3", type=int, default=3)
+    parser.add_argument("-c", "--pcrossover",       help="probability of crossover, default is 0.9", type=float, default=0.9)
+    parser.add_argument("-m", "--pmutation",        help="prabability of mutation, default is 0.03", type=float, default=0.03)
+    parser.add_argument("-e", "--elite-size",       help="size of population elite, default is 24", type=int, default=24)
+    args = parser.parse_args()
 
-STEPS_TA = 18600
-STEPS_TB = 5400
+    if args.verbosity >= 2:
+        __log__.setLevel(logging.DEBUG)
+    elif args.verbosity == 1:
+        __log__.setLevel(logging.INFO)
+    else:
+        __log__.setLevel(logging.WARNING)
 
-NUM_GENERATIONS = 500
-NUM_RUNS = 3
-NUM_ROBOTS = 10
-POPULATION_SIZE = 120
+    if args.quiet:
+        __log__.setLevel(logging.ERROR)
 
-D = [0.7, 0.9, 1.1, 1.3, 1.5]
-# D = [0.9, 1.1, 1.3]
-# D = [1.1]
+    uri = os.environ.get('SOLACE_URI')
+    username = os.environ.get('SOLACE_USERNAME')
+    password = os.environ.get('SOLACE_PASSWORD')
 
-PCROSSOVER = 0.9
-PMUTATION = 0.03
-ELITE_SIZE = 24
+    if (uri is None) or (username is None) or (password is None):
+        raise Exception('Environment variables (SOLACE_URI, SOLACE_USERNAME, SOLACE_PASSWORD) not set!')
+
+    context = cl.create_some_context()
+    queue = cl.CommandQueue(context)
+
+    exp = solace.get_experiment(uri, username, password)
+    inst = exp.create_instance(args.num_runs, {
+        'PCROSSOVER': args.pcrossover,
+        'PMUTATION': args.pmutation,
+        'ELITE_SIZE': args.elite_size,
+        'STEPS_TA': args.ta,
+        'STEPS_TB': args.tb,
+        'NUM_GENERATIONS': args.num_generations,
+        'NUM_RUNS': args.num_runs,
+        'NUM_ROBOTS': args.num_robots,
+        'POPULATION_SIZE': args.population_size,
+        'D': args.distances,
+        'TRIALS': args.trials,
+    })
+
+    for run in inst.runs:
+        GA(context, queue).execute(run, args)
 
 class GA(object):
     def __init__(self, context, queue):
         self.context = context
         self.queue = queue
+
+    def execute(self, run, args):
+        __log__.info(' GA Starting...')
+        __log__.info('=' * 80)
+
+        run.begin()
+
+        self.population = [ Individual() for i in range(args.population_size) ]
+        self.simulator = physics.Simulator(self.context, self.queue,
+                                           num_worlds=args.population_size,
+                                           num_robots=args.num_robots,
+                                           ta=args.ta, tb=args.tb)
+
+        last_best_fitness = 0
+
+        __log__.info('Calculating initial fitness...')
+        self.evaluate(self.population)
+        self.population = sorted(self.population, key=lambda ind: ind.fitness)
+
+        generation = 1
+        while (generation <= args.num_generations):
+            genomeMom = None
+            genomeDad = None
+
+            new_pop = []
+            elite = self.population[-args.elite_size:]
+
+            size = len(self.population)
+            if (size % 2) != 0:
+                size -= 1
+
+            for i in xrange(0, size, 2):
+                genomeMom = self.select(self.population)
+                genomeDad = self.select(self.population)
+
+                if (args.pcrossover >= 1) or (random.random() < args.pcrossover):
+                   (sister, brother) = genomeMom.crossover(genomeDad)
+                else:
+                    (sister, brother) = (genomeMom.copy(), genomeDad.copy())
+
+                sister.mutate(args.pmutation)
+                brother.mutate(args.pmutation)
+
+                new_pop.append(sister)
+                new_pop.append(brother)
+
+            if len(self.population) % 2 != 0:
+                last = self.select(self.population).copy()
+
+                if (args.pmutation >= 1) or (random.random() < args.pmutation):
+                    last.mutate()
+
+                new_pop.append(last)
+
+            __log__.info('[gen=%d] Evaluating population...', generation)
+            self.evaluate(new_pop)
+            new_pop =  sorted(new_pop, key=lambda ind: ind.fitness)
+
+            for i in xrange(args.elite_size):
+                if elite[i].fitness > new_pop[i - args.elite_size].fitness:
+                    new_pop[i - args.elite_size] = elite[i]
+
+            self.population = sorted(new_pop, key=lambda ind: ind.fitness)
+
+            best = self.population[-1]
+            new_best = False
+            if (best.fitness > last_best_fitness):
+                new_best = True
+                last_best_fitness = best.fitness
+
+            __log__.info('[gen=%d] Population evaluated, current best individual: %s', generation, str(best))
+
+            if new_best:
+                run.progress(generation / float(args.num_generations), {
+                    'generation': generation,
+                    'best_fitness': best.fitness,
+                    'best_genome': best.genome.to_dict()
+                })
+
+                if not args.no_save:
+                    __log__.info('[gen=%d] Saving simulation for the new found best...', generation)
+                    fit = self.simulate_and_save('/tmp/simulation.srs',
+                            best.genome,
+                            args.ta, args.tb,
+                            args.num_robots,
+                            D[ random.randint(0, len(D)-1) ])
+                    run.upload('/tmp/simulation.srs', 'run-%02d-new-best-gen-%04d-fit-%.2f.srs' % (run.id, generation, fit) )
+                    os.remove('/tmp/simulation.srs')
+            else:
+                run.progress(generation / float(args.num_generations), {'generation': generation})
+
+            if args.image:
+                self.generate_image('/tmp/image.png')
+                run.upload('/tmp/image.png', 'image-run-%02d-gen-%04d.png' % (run.id, generation))
+                os.remove('/tmp/image.png')
+
+            generation += 1
+
+        run.done({'generation': generation, 'best_fitness': best.fitness, 'best_genome': best.genome.to_dict()})
 
     def select(self, population):
         return population.pop()
@@ -79,103 +217,11 @@ class GA(object):
         for i in xrange(len(population)):
             population[i].fitness /= len(D) * 3
 
-    def execute(self, run):
-        __log__.info(' GA Starting...')
-        __log__.info('=' * 80)
-
-        run.begin()
-
-        self.population = [ Individual() for i in range(POPULATION_SIZE) ]
-        self.simulator = physics.Simulator(self.context, self.queue,
-                                           num_worlds=POPULATION_SIZE,
-                                           num_robots=NUM_ROBOTS,
-                                           ta=STEPS_TA, tb=STEPS_TB)
-
-        last_best_fitness = 0
-
-        __log__.info('Calculating initial fitness...')
-        self.evaluate(self.population)
-        self.population = sorted(self.population, key=lambda ind: ind.fitness)
-
-        generation = 0
-        while (generation < NUM_GENERATIONS):
-            genomeMom = None
-            genomeDad = None
-
-            new_pop = []
-            elite = self.population[-ELITE_SIZE:]
-
-            size = len(self.population)
-            if (size % 2) != 0:
-                size -= 1
-
-            for i in xrange(0, size, 2):
-                genomeMom = self.select(self.population)
-                genomeDad = self.select(self.population)
-
-                if (PCROSSOVER >= 1) or (random.random() < PCROSSOVER):
-                   (sister, brother) = genomeMom.crossover(genomeDad)
-                else:
-                    (sister, brother) = (genomeMom.copy(), genomeDad.copy())
-
-                sister.mutate(PMUTATION)
-                brother.mutate(PMUTATION)
-
-                new_pop.append(sister)
-                new_pop.append(brother)
-
-            if len(self.population) % 2 != 0:
-                last = self.select(self.population).copy()
-
-                if (PMUTATION >= 1) or (random.random() < PMUTATION):
-                    last.mutate()
-
-                new_pop.append(last)
-
-            __log__.info('Calculating fitness for each individual...')
-            self.evaluate(new_pop)
-            new_pop =  sorted(new_pop, key=lambda ind: ind.fitness)
-
-            for i in xrange(ELITE_SIZE):
-                if elite[i].fitness > new_pop[i - ELITE_SIZE].fitness:
-                    new_pop[i - ELITE_SIZE] = elite[i]
-
-            self.population = sorted(new_pop, key=lambda ind: ind.fitness)
-
-            generation += 1
-
-            __log__.info('-' * 80)
-            __log__.info('NEW POP')
-            for i in xrange(len(new_pop)):
-                __log__.info(str(new_pop[i]))
-            __log__.info('-' * 80)
-
-            best = self.population[-1]
-            new_best = False
-            if (best.fitness > last_best_fitness):
-                __log__.info('Found new best individual: %s', str(best))
-                new_best = True
-                last_best_fitness = best.fitness
-
-            __log__.info('-' * 80)
-            __log__.info('[gen=%d] CURRENT BEST INDIVIDUAL IS: %s', generation, str(best))
-            __log__.info(str(best.genome))
-            __log__.info('-' * 80)
-
-            run.progress(generation / float(NUM_GENERATIONS), {'generation': generation, 'best_fitness': best.fitness, 'best_genome': best.genome.to_dict()})
-
-            if new_best:
-                __log__.info('Saving simulation for the new found best...')
-                fit = self.simulate_and_save('/tmp/simulation.srs', best.genome, D[ random.randint(0, len(D)-1) ])
-                run.upload('/tmp/simulation.srs', 'run-%02d-new-best-gen-%04d-fit-%.2f.srs' % (run.id, generation, fit) )
-
-        run.done({'generation': generation, 'best_fitness': best.fitness, 'best_genome': best.genome.to_dict()})
-
-    def simulate_and_save(self, filename, pos, distance):
+    def simulate_and_save(self, filename, pos, ta, tb, num_robots, distance):
         simulator = physics.Simulator(self.context, self.queue,
                                       num_worlds=1,
-                                      num_robots=NUM_ROBOTS,
-                                      ta=STEPS_TA, tb=STEPS_TB)
+                                      num_robots=num_robots,
+                                      ta=ta, tb=tb)
 
         save = io.SaveFile.new(filename, step_rate=1/float(simulator.time_step))
 
@@ -205,10 +251,10 @@ class GA(object):
                 hidden0=hidden[i][0], hidden1=hidden[i][1], hidden2=hidden[i][2])
 
         current_step = 0
-        while current_step < (STEPS_TA + STEPS_TB):
+        while current_step < (ta + tb):
             simulator.step()
 
-            if (current_step <= STEPS_TA):
+            if (current_step <= ta):
                 simulator.set_fitness(0)
                 simulator.set_energy(2)
 
@@ -264,25 +310,25 @@ class Individual(object):
 
        return (sister, brother)
 
-    def mutate(self, pMutation):
+    def mutate(self, pmutation):
         for i in xrange(len(self.genome.weights)):
-            if random.random() < pMutation:
+            if random.random() < pmutation:
                 self.genome.weights[i] += random.uniform(-5,5)
 
         for i in xrange(len(self.genome.bias)):
-            if random.random() < pMutation:
+            if random.random() < pmutation:
                 self.genome.bias[i] += random.uniform(-5,5)
 
         for i in xrange(len(self.genome.weights_hidden)):
-            if random.random() < pMutation:
+            if random.random() < pmutation:
                 self.genome.weights_hidden[i] += random.uniform(-5,5)
 
         for i in xrange(len(self.genome.bias_hidden)):
-            if random.random() < pMutation:
+            if random.random() < pmutation:
                 self.genome.bias_hidden[i] += random.uniform(-5,5)
 
         for i in xrange(len(self.genome.timec_hidden)):
-            if random.random() < pMutation:
+            if random.random() < pmutation:
                 self.genome.timec_hidden[i] += random.uniform(-1,1)
 
         self.genome.check_boundary(self.genome.weights_boundary, self.genome.weights)
@@ -290,34 +336,3 @@ class Individual(object):
         self.genome.check_boundary(self.genome.weights_boundary, self.genome.weights_hidden)
         self.genome.check_boundary(self.genome.bias_boundary, self.genome.bias_hidden)
         self.genome.check_boundary(self.genome.timec_boundary, self.genome.timec_hidden)
-
-if __name__=="__main__":
-    uri = os.environ.get('SOLACE_URI')
-    username = os.environ.get('SOLACE_USERNAME')
-    password = os.environ.get('SOLACE_PASSWORD')
-
-    if (uri is None) or (username is None) or (password is None):
-        raise Exception('Environment variables (SOLACE_URI, SOLACE_USERNAME, SOLACE_PASSWORD) not set!')
-
-    context = cl.create_some_context()
-    queue = cl.CommandQueue(context)
-
-    exp = solace.get_experiment(uri, username, password)
-    inst = exp.create_instance(NUM_RUNS, {
-        'NUM_SENSORS': NUM_SENSORS,
-        'NUM_ACTUATORS': NUM_ACTUATORS,
-        'NUM_HIDDEN': NUM_HIDDEN,
-        'PCROSSOVER': PCROSSOVER,
-        'PMUTATION': PMUTATION,
-        'ELITE_SIZE': ELITE_SIZE,
-        'STEPS_TA': STEPS_TA,
-        'STEPS_TB': STEPS_TB,
-        'NUM_GENERATIONS': NUM_GENERATIONS,
-        'NUM_RUNS': NUM_RUNS,
-        'NUM_ROBOTS': NUM_ROBOTS,
-        'POPULATION_SIZE': POPULATION_SIZE,
-        'D': D
-    })
-
-    for run in inst.runs:
-        GA(context, queue).execute(run)
