@@ -336,3 +336,6 @@ class Individual(object):
         self.genome.check_boundary(self.genome.weights_boundary, self.genome.weights_hidden)
         self.genome.check_boundary(self.genome.bias_boundary, self.genome.bias_hidden)
         self.genome.check_boundary(self.genome.timec_boundary, self.genome.timec_hidden)
+
+if __name__=="__main__":
+    main()
