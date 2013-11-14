@@ -49,8 +49,8 @@ class TestSimulator(object):
 
             arena, target_areas, target_areas_radius = simulator.get_world_transforms()
             save_file.add_object('arena', io.SHAPE_RECTANGLE, x=0.0, y=0.0, width=arena[0][0], height=arena[0][1])
-            save_file.add_object('target0', io.SHAPE_CIRCLE, x=target_areas[0][0], y=target_areas[0][1], radius=target_areas_radius[0][0], sin=0.0, cos=0.1)
-            save_file.add_object('target1', io.SHAPE_CIRCLE, x=target_areas[0][2], y=target_areas[0][3], radius=target_areas_radius[0][1], sin=0.0, cos=0.1)
+            save_file.add_object('target0', io.SHAPE_CIRCLE, x=target_areas[0][0], y=target_areas[0][1], radius=target_areas_radius[0][0], sin=0.0, cos=1.0)
+            save_file.add_object('target1', io.SHAPE_CIRCLE, x=target_areas[0][2], y=target_areas[0][3], radius=target_areas_radius[0][1], sin=0.0, cos=1.0)
 
             fitene = simulator.get_individual_fitness_energy()
             sensors, actuators, hidden = simulator.get_ann_state()
