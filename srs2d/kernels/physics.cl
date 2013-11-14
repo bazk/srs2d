@@ -513,13 +513,39 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
 
     worlds[wid].robots[rid].sensors = 0;
 
-    if ( ((worlds[wid].robots[rid].transform.pos.x+ROBOT_BODY_RADIUS) > (worlds[wid].arena_width/2)) ||
-         ((worlds[wid].robots[rid].transform.pos.x-ROBOT_BODY_RADIUS) < (-worlds[wid].arena_width/2)) ||
-         ((worlds[wid].robots[rid].transform.pos.y+ROBOT_BODY_RADIUS) > (worlds[wid].arena_height/2)) ||
-         ((worlds[wid].robots[rid].transform.pos.y-ROBOT_BODY_RADIUS) < (-worlds[wid].arena_height/2)) )
+    if ( ((worlds[wid].robots[rid].transform.pos.x+ROBOT_BODY_RADIUS+IR_RADIUS) > (worlds[wid].arena_width/2)) ||
+         ((worlds[wid].robots[rid].transform.pos.x-ROBOT_BODY_RADIUS-IR_RADIUS) < (-worlds[wid].arena_width/2)) ||
+         ((worlds[wid].robots[rid].transform.pos.y+ROBOT_BODY_RADIUS+IR_RADIUS) > (worlds[wid].arena_height/2)) ||
+         ((worlds[wid].robots[rid].transform.pos.y-ROBOT_BODY_RADIUS-IR_RADIUS) < (-worlds[wid].arena_height/2)) )
     {
-        worlds[wid].robots[rid].collision = 1;
-        return;
+        if ( ((worlds[wid].robots[rid].transform.pos.x+ROBOT_BODY_RADIUS) > (worlds[wid].arena_width/2)) ||
+             ((worlds[wid].robots[rid].transform.pos.x-ROBOT_BODY_RADIUS) < (-worlds[wid].arena_width/2)) ||
+             ((worlds[wid].robots[rid].transform.pos.y+ROBOT_BODY_RADIUS) > (worlds[wid].arena_height/2)) ||
+             ((worlds[wid].robots[rid].transform.pos.y-ROBOT_BODY_RADIUS) < (-worlds[wid].arena_height/2)) )
+        {
+            worlds[wid].robots[rid].collision = 1;
+            return;
+        }
+
+        for (i = 0; i < 8; i++) {
+            float angle = (float) i * 2.0f * M_PI / 8.0f;
+            rotation_t rot;
+            rot.sin = sin(angle);
+            rot.cos = cos(angle);
+
+            float2 vec = {ROBOT_BODY_RADIUS+IR_RADIUS, 0};
+            vec = rot_mul_vec(rot, vec);
+
+            float2 point = transform_mul_vec(worlds[wid].robots[rid].transform, vec);
+
+            if ( (point.x >= (worlds[wid].arena_width/2)) ||
+                 (point.x <= (-worlds[wid].arena_width/2)) ||
+                 (point.y >= (worlds[wid].arena_height/2)) ||
+                 (point.y <= (-worlds[wid].arena_height/2)) )
+            {
+                worlds[wid].robots[rid].sensors |= uint_exp2(i);
+            }
+        }
     }
 
     for (otherid = 0; otherid < ROBOTS_PER_WORLD; otherid++)
