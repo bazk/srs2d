@@ -22,7 +22,6 @@ import os
 import logging
 import random
 import copy
-import math
 import numpy as np
 import pyopencl as cl
 import pyopencl.characterize
@@ -34,6 +33,8 @@ NUM_SENSORS = 13
 NUM_ACTUATORS = 4
 NUM_HIDDEN = 3
 
+__dir__ = os.path.dirname(__file__)
+
 class Simulator(object):
     @staticmethod
     def test_raycast():
@@ -42,7 +43,7 @@ class Simulator(object):
 
         options = '-DROBOTS_PER_WORLD=%d -DTIME_STEP=%f -DTA=%f -DTB=%f -DDYNAMICS_ITERATIONS=%d' % (3, 1/10.0, 600, 5400, 4)
 
-        src = open(os.path.join(os.path.dirname(__file__), 'kernels/physics.cl'), 'r')
+        src = open(os.path.join(__dir__, 'kernels/physics.cl'), 'r')
         prg = cl.Program(context, src.read()).build(options=options)
 
         # query the structs sizes
@@ -64,7 +65,7 @@ class Simulator(object):
 
         print results
 
-    def __init__(self, context, queue, num_worlds=1, num_robots=9, ta=600, tb=5400, time_step=1/10.0, dynamics_iterations=4):
+    def __init__(self, context, queue, num_worlds=1, num_robots=9, ta=600, tb=5400, time_step=1/10.0):
         global NUM_INPUTS, NUM_OUTPUTS
 
         self.step_count = 0.0
@@ -78,11 +79,10 @@ class Simulator(object):
         self.ta = ta
         self.tb = tb
         self.time_step = time_step
-        self.dynamics_iterations = dynamics_iterations
 
-        options = '-DROBOTS_PER_WORLD=%d -DTIME_STEP=%f -DTA=%f -DTB=%f -DDYNAMICS_ITERATIONS=%d' % (num_robots, time_step, ta, tb, dynamics_iterations)
+        options = '-DROBOTS_PER_WORLD=%d -DTIME_STEP=%f -DTA=%d -DTB=%d -I"%s"' % (num_robots, time_step, ta, tb, os.path.join(__dir__, 'kernels/'))
 
-        src = open(os.path.join(os.path.dirname(__file__), 'kernels/physics.cl'), 'r')
+        src = open(os.path.join(__dir__, 'kernels/physics.cl'), 'r')
         self.prg = cl.Program(context, src.read()).build(options=options)
 
         # query the structs sizes
