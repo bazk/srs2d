@@ -1,11 +1,13 @@
 #include <pyopencl-ranluxcl.cl>
 
+#include <samples.h>
+
 #pragma OPENCL EXTENSION cl_amd_printf : enable
 
 #define ROBOT_BODY_RADIUS           0.035
-#define WHEELS_MAX_ANGULAR_SPEED    2.05
+#define WHEELS_MAX_ANGULAR_SPEED    9.84
 #define WHEELS_DISTANCE             0.055
-#define WHEELS_RADIUS               0.02
+#define WHEELS_RADIUS               0.01
 #define IR_RADIUS                   0.025
 #define CAMERA_RADIUS               0.35
 #define CAMERA_ANGLE                1.2566370614359172 // 72 degrees
@@ -461,8 +463,8 @@ __kernel void step_actuators(__global ranluxcl_state_t *ranluxcltab, __global wo
     int wid = get_global_id(0);
     int rid = get_global_id(1);
 
-    worlds[wid].robots[rid].wheels_angular_speed.s0 = worlds[wid].robots[rid].actuators[OUT_wheels0] * WHEELS_MAX_ANGULAR_SPEED;
-    worlds[wid].robots[rid].wheels_angular_speed.s1 = worlds[wid].robots[rid].actuators[OUT_wheels1] * WHEELS_MAX_ANGULAR_SPEED;
+    worlds[wid].robots[rid].wheels_angular_speed.s0 = (worlds[wid].robots[rid].actuators[OUT_wheels0] * 2 * WHEELS_MAX_ANGULAR_SPEED) - WHEELS_MAX_ANGULAR_SPEED;
+    worlds[wid].robots[rid].wheels_angular_speed.s1 = (worlds[wid].robots[rid].actuators[OUT_wheels1] * 2 * WHEELS_MAX_ANGULAR_SPEED) - WHEELS_MAX_ANGULAR_SPEED;
     worlds[wid].robots[rid].front_led = (worlds[wid].robots[rid].actuators[OUT_front_led] > 0.5) ? 1 : 0;
     worlds[wid].robots[rid].rear_led = (worlds[wid].robots[rid].actuators[OUT_rear_led] > 0.5) ? 1 : 0;
 }
@@ -485,23 +487,21 @@ __kernel void step_dynamics(__global ranluxcl_state_t *ranluxcltab, __global wor
         return;
     }
 
-    float2 wls; // wheels linear speed
-    wls.s0 = worlds[wid].robots[rid].wheels_angular_speed.s0 * WHEELS_RADIUS;
-    wls.s1 = worlds[wid].robots[rid].wheels_angular_speed.s1 * WHEELS_RADIUS;
+    float dt = 1.0f; // should be TIME_STEP (needs interpolation)
 
-    float2 wlv = {wls.s0 + wls.s1, 0}; // wheels linear velocity
+    int v1 = round(worlds[wid].robots[rid].actuators[OUT_wheels1] * 24);
+    int v2 = round(worlds[wid].robots[rid].actuators[OUT_wheels0] * 24);
 
-    float2 linear_velocity = rot_mul_vec(worlds[wid].robots[rid].transform.rot, wlv);
+    float angular_speed = motor_angular_speed_samples[v1][v2] * M_PI / 180.0f;
+    float linear_speed = motor_linear_speed_samples[v1][v2] / 100.0f;
 
-    float angular_speed = atan2(wls.s0 - wls.s1, (float) WHEELS_DISTANCE / 2);
+    worlds[wid].robots[rid].transform.pos.x += linear_speed * worlds[wid].robots[rid].transform.rot.cos * dt;
+    worlds[wid].robots[rid].transform.pos.y += linear_speed * worlds[wid].robots[rid].transform.rot.sin * dt;
 
-    worlds[wid].robots[rid].transform.pos.x += linear_velocity.x * TIME_STEP;
-    worlds[wid].robots[rid].transform.pos.y += linear_velocity.y * TIME_STEP;
-
-    float angle = atan2(worlds[wid].robots[rid].transform.rot.sin, worlds[wid].robots[rid].transform.rot.cos);
-    angle += angular_speed * TIME_STEP;
-    worlds[wid].robots[rid].transform.rot.sin = sin(angle);
-    worlds[wid].robots[rid].transform.rot.cos = cos(angle);
+    float angle_robot = angle(worlds[wid].robots[rid].transform.rot.sin, worlds[wid].robots[rid].transform.rot.cos);
+    angle_robot += angular_speed * dt;
+    worlds[wid].robots[rid].transform.rot.sin = sin(angle_robot);
+    worlds[wid].robots[rid].transform.rot.cos = cos(angle_robot);
 }
 
 __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
