@@ -113,6 +113,12 @@ float2 transform_mul_vec(transform_t t, float2 v)
     return res;
 }
 
+float angle(float sin, float cos) {
+    float a = atan2(sin, cos);
+    if (a < 0) return a + 2*M_PI;
+    return a;
+}
+
 unsigned int uint_exp2(unsigned int n)
 {
 
@@ -176,14 +182,14 @@ int _raycast(__global world_t *worlds)
     float2 front = {(ROBOT_BODY_RADIUS + LED_PROTUBERANCE), 0};
 
     float2 orig = worlds[0].robots[0].transform.pos;
-    float angle_robot = atan2(worlds[0].robots[0].transform.rot.sin, worlds[0].robots[0].transform.rot.cos);
+    float angle_robot = angle(worlds[0].robots[0].transform.rot.sin, worlds[0].robots[0].transform.rot.cos);
 
     float2 dest = transform_mul_vec(worlds[0].robots[2].transform, front);
     float d = distance(orig, dest);
 
     if (d < CAMERA_RADIUS)
     {
-        float angle_dest = atan2(dest.y - orig.y, dest.x - orig.x);
+        float angle_dest = angle(dest.y - orig.y, dest.x - orig.x);
 
         if ( (angle_robot > angle_dest) &&
              ((angle_robot-angle_dest) <= (CAMERA_ANGLE/2)) )
@@ -534,9 +540,7 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
             float s = worlds[wid].robots[otherid].transform.pos.y - worlds[wid].robots[rid].transform.pos.y;
             float c = worlds[wid].robots[otherid].transform.pos.x - worlds[wid].robots[rid].transform.pos.x;
 
-            float a = atan2(s, c) - atan2(worlds[wid].robots[rid].transform.rot.sin, worlds[wid].robots[rid].transform.rot.cos);
-            if (a < 0)
-                a += 2*M_PI;
+            float a = angle(s, c) - angle(worlds[wid].robots[rid].transform.rot.sin, worlds[wid].robots[rid].transform.rot.cos);
 
             int idx = (int) floor(fabs(a) / (2*M_PI/8)) % 8;
             worlds[wid].robots[rid].sensors |= uint_exp2(idx);
@@ -548,7 +552,7 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
             float2 rear = {-(ROBOT_BODY_RADIUS + LED_PROTUBERANCE), 0};
 
             float2 orig = worlds[wid].robots[rid].transform.pos;
-            float angle_robot = atan2(worlds[wid].robots[rid].transform.rot.sin, worlds[wid].robots[rid].transform.rot.cos);
+            float angle_robot = angle(worlds[wid].robots[rid].transform.rot.sin, worlds[wid].robots[rid].transform.rot.cos);
 
             if (worlds[wid].robots[otherid].front_led == 1)
             {
@@ -557,7 +561,7 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
 
                 if (d < CAMERA_RADIUS)
                 {
-                    float angle_dest = atan2(dest.y - orig.y, dest.x - orig.x);
+                    float angle_dest = angle(dest.y - orig.y, dest.x - orig.x);
 
                     if ( (angle_robot > angle_dest) &&
                          ((angle_robot-angle_dest) <= (CAMERA_ANGLE/2)) )
@@ -565,7 +569,7 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
                         if (!raycast(worlds, orig, dest))
                             worlds[wid].robots[rid].sensors |= IN_camera0;
                     }
-                    else if ( (angle_dest > angle_robot) &&
+                    else if ( (angle_dest >= angle_robot) &&
                               ((angle_dest-angle_robot) <= (CAMERA_ANGLE/2)) )
                     {
                         if (!raycast(worlds, orig, dest))
@@ -581,7 +585,7 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
 
                 if (d < CAMERA_RADIUS)
                 {
-                    float angle_dest = atan2(dest.y - orig.y, dest.x - orig.x);
+                    float angle_dest = angle(dest.y - orig.y, dest.x - orig.x);
 
                     if ( (angle_robot > angle_dest) &&
                          ((angle_robot-angle_dest) <= (CAMERA_ANGLE/2)) )
@@ -589,7 +593,7 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
                         if (!raycast(worlds, orig, dest))
                             worlds[wid].robots[rid].sensors |= IN_camera2;
                     }
-                    else if ( (angle_dest > angle_robot) &&
+                    else if ( (angle_dest >= angle_robot) &&
                          ((angle_dest-angle_robot) <= (CAMERA_ANGLE/2)) )
                     {
                         if (!raycast(worlds, orig, dest))
@@ -625,11 +629,11 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
         {
             float2 orig = worlds[wid].robots[rid].transform.pos;
             float2 dest = worlds[wid].target_areas[i].center;
-            float angle_robot = atan2(worlds[wid].robots[rid].transform.rot.sin, worlds[wid].robots[rid].transform.rot.cos);
+            float angle_robot = angle(worlds[wid].robots[rid].transform.rot.sin, worlds[wid].robots[rid].transform.rot.cos);
 
             if (distance(orig, dest) < CAMERA_RADIUS)
             {
-                float angle_dest = atan2(dest.y - orig.y, dest.x - orig.x);
+                float angle_dest = angle(dest.y - orig.y, dest.x - orig.x);
 
                 if ( (angle_robot > angle_dest) &&
                      ((angle_robot-angle_dest) <= (CAMERA_ANGLE/2)) )
@@ -637,7 +641,7 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
                     if (!raycast(worlds, orig, dest))
                         worlds[wid].robots[rid].sensors |= IN_camera2;
                 }
-                else if ( (angle_dest > angle_robot) &&
+                else if ( (angle_dest >= angle_robot) &&
                      ((angle_dest-angle_robot) <= (CAMERA_ANGLE/2)) )
                 {
                     if (!raycast(worlds, orig, dest))
