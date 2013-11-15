@@ -64,6 +64,7 @@ typedef struct {
     float energy;
     float fitness;
     int last_target_area;
+    int collision_count;
 
     unsigned int sensors;
     float actuators[NUM_ACTUATORS];
@@ -384,6 +385,7 @@ __kernel void init_robots(__global ranluxcl_state_t *ranluxcltab, __global world
     worlds[wid].robots[rid].energy = 2;
     worlds[wid].robots[rid].fitness = 0.0;
     worlds[wid].robots[rid].last_target_area = -1;
+    worlds[wid].robots[rid].collision_count = 0;
 
     worlds[wid].robots[rid].sensors = 0;
 
@@ -484,6 +486,7 @@ __kernel void step_dynamics(__global ranluxcl_state_t *ranluxcltab, __global wor
         worlds[wid].robots[rid].energy = 2;
         worlds[wid].robots[rid].fitness = 0.0;
         worlds[wid].robots[rid].last_target_area = -1;
+        worlds[wid].robots[rid].collision_count += 1;
         return;
     }
 
@@ -762,8 +765,10 @@ __kernel void get_fitness(__global world_t *worlds, __global float *fitness)
 
     float avg_fitness = 0;
 
-    for (rid = 0; rid < ROBOTS_PER_WORLD; rid++)
-        avg_fitness += worlds[wid].robots[rid].fitness / max_trips;
+    for (rid = 0; rid < ROBOTS_PER_WORLD; rid++) {
+        if (worlds[wid].robots[rid].collision_count == 0)
+            avg_fitness += worlds[wid].robots[rid].fitness / max_trips;
+    }
 
     fitness[wid] = avg_fitness / ROBOTS_PER_WORLD;
 }
