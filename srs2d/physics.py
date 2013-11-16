@@ -22,6 +22,7 @@ import os
 import logging
 import random
 import copy
+import math
 import numpy as np
 import pyopencl as cl
 import pyopencl.characterize
@@ -192,11 +193,12 @@ class Simulator(object):
         return transforms, radius
 
     def set_ann_parameters(self, world, parameters):
-        self.weights[world*NUM_ACTUATORS*(NUM_SENSORS+NUM_HIDDEN):(world+1)*NUM_ACTUATORS*(NUM_SENSORS+NUM_HIDDEN)] = parameters.weights
-        self.bias[world*NUM_ACTUATORS:(world+1)*NUM_ACTUATORS] = parameters.bias
-        self.weights_hidden[world*NUM_HIDDEN*NUM_SENSORS:(world+1)*NUM_HIDDEN*NUM_SENSORS] = parameters.weights_hidden
-        self.bias_hidden[world*NUM_HIDDEN:(world+1)*NUM_HIDDEN] = parameters.bias_hidden
-        self.timec_hidden[world*NUM_HIDDEN:(world+1)*NUM_HIDDEN] = parameters.timec_hidden
+        p = parameters.decode()
+        self.weights[world*NUM_ACTUATORS*(NUM_SENSORS+NUM_HIDDEN):(world+1)*NUM_ACTUATORS*(NUM_SENSORS+NUM_HIDDEN)] = p['weights']
+        self.bias[world*NUM_ACTUATORS:(world+1)*NUM_ACTUATORS] = p['bias']
+        self.weights_hidden[world*NUM_HIDDEN*NUM_SENSORS:(world+1)*NUM_HIDDEN*NUM_SENSORS] = p['weights_hidden']
+        self.bias_hidden[world*NUM_HIDDEN:(world+1)*NUM_HIDDEN] = p['bias_hidden']
+        self.timec_hidden[world*NUM_HIDDEN:(world+1)*NUM_HIDDEN] = p['timec_hidden']
 
     def commit_ann_parameters(self):
         cl.enqueue_copy(self.queue, self.weights_buf, self.weights)
@@ -251,190 +253,117 @@ class Simulator(object):
         return sensors, actuators, hidden
 
 class ANNParametersArray(object):
-    def __init__(self, randomize=False, weights_boundary=(-5.0, 5.0), bias_boundary=(-5.0, 5.0), timec_boundary=(0, 1.0)):
-        self.weights_boundary = weights_boundary
-        self.bias_boundary = bias_boundary
-        self.timec_boundary = timec_boundary
+    WEIGHTS_BOUNDARY = (-5.0, 5.0)
+    BIAS_BOUNDARY = (-5.0, 5.0)
+    TIMEC_BOUNDARY = (0, 1.0)
 
-        if randomize:
-            self.weights = np.random.uniform(weights_boundary[0], weights_boundary[1], NUM_ACTUATORS * (NUM_SENSORS + NUM_HIDDEN))
-            self.bias = np.random.uniform(bias_boundary[0], bias_boundary[1], NUM_ACTUATORS)
-            self.weights_hidden = np.random.uniform(weights_boundary[0], weights_boundary[1], NUM_HIDDEN * NUM_SENSORS)
-            self.bias_hidden = np.random.uniform(bias_boundary[0], bias_boundary[1], NUM_HIDDEN)
-            self.timec_hidden = np.random.uniform(timec_boundary[0], timec_boundary[1], NUM_HIDDEN)
+    def __init__(self):
+        length = (NUM_ACTUATORS * (NUM_SENSORS + NUM_HIDDEN) + # weights
+                  NUM_ACTUATORS + # bias \
+                  NUM_HIDDEN * NUM_SENSORS + # weights_hidden
+                  NUM_HIDDEN + # bias_hidden
+                  NUM_HIDDEN) # timec_hidden
 
-        else:
-            self.weights = np.zeros(NUM_ACTUATORS * (NUM_SENSORS + NUM_HIDDEN), dtype=np.float32)
-            self.bias = np.zeros(NUM_ACTUATORS, dtype=np.float32)
-            self.weights_hidden = np.zeros(NUM_HIDDEN * NUM_SENSORS, dtype=np.float32)
-            self.bias_hidden = np.zeros(NUM_HIDDEN, dtype=np.float32)
-            self.timec_hidden = np.zeros(NUM_HIDDEN, dtype=np.float32)
-
-    def __str__(self):
-        return str(self.to_dict())
-
-    def __len__(self):
-        return len(self.weights) + len(self.bias) + len(self.weights_hidden) + \
-                len(self.bias_hidden) + len(self.timec_hidden)
-
-    def to_dict(self):
-        return {
-            'weights': [ x for x in self.weights.flat ],
-            'bias': [ x for x in self.bias.flat ],
-            'weights_hidden': [ x for x in self.weights_hidden.flat ],
-            'bias_hidden': [ x for x in self.bias_hidden.flat ],
-            'timec_hidden': [ x for x in self.timec_hidden.flat ]
-        }
+        self.encoded = ''
+        for i in xrange(length):
+            self.encoded += chr(random.randint(0,254))
 
     def copy(self):
-        pv = ANNParametersArray()
-        pv.weights_boundary = copy.deepcopy(self.weights_boundary)
-        pv.bias_boundary = copy.deepcopy(self.bias_boundary)
-        pv.timec_boundary = copy.deepcopy(self.timec_boundary)
-        pv.weights = np.copy(self.weights)
-        pv.bias = np.copy(self.bias)
-        pv.weights_hidden = np.copy(self.weights_hidden)
-        pv.bias_hidden = np.copy(self.bias_hidden)
-        pv.timec_hidden = np.copy(self.timec_hidden)
-        return pv
+        n = ANNParametersArray()
+        n.encoded = copy.deepcopy(self.encoded)
+        return n
 
-    def __add__(self, other):
-        if isinstance(other, ANNParametersArray):
-            ret = ANNParametersArray()
-            ret.weights_boundary = self.weights_boundary
-            ret.bias_boundary = self.bias_boundary
-            ret.timec_boundary = self.timec_boundary
+    def __str__(self):
+        ret = ''
+        for c in self.encoded:
+            ret += c.encode('hex')
+        return ret
 
-            ret.weights = self.weights + other.weights
-            ret.bias = self.bias + other.bias
-            ret.weights_hidden = self.weights_hidden + other.weights_hidden
-            ret.bias_hidden = self.bias_hidden + other.bias_hidden
-            ret.timec_hidden = self.timec_hidden + other.timec_hidden
-
-            self.check_boundary(self.weights_boundary, ret.weights)
-            self.check_boundary(self.bias_boundary, ret.bias)
-            self.check_boundary(self.weights_boundary, ret.weights_hidden)
-            self.check_boundary(self.bias_boundary, ret.bias_hidden)
-            self.check_boundary(self.timec_boundary, ret.timec_hidden)
-            return ret
-        else:
-            raise NotImplemented
-
-    def __sub__(self, other):
-        if isinstance(other, ANNParametersArray):
-            ret = ANNParametersArray()
-            ret.weights_boundary = self.weights_boundary
-            ret.bias_boundary = self.bias_boundary
-            ret.timec_boundary = self.timec_boundary
-
-            ret.weights = self.weights - other.weights
-            ret.bias = self.bias - other.bias
-            ret.weights_hidden = self.weights_hidden - other.weights_hidden
-            ret.bias_hidden = self.bias_hidden - other.bias_hidden
-            ret.timec_hidden = self.timec_hidden - other.timec_hidden
-
-            self.check_boundary(self.weights_boundary, ret.weights)
-            self.check_boundary(self.bias_boundary, ret.bias)
-            self.check_boundary(self.weights_boundary, ret.weights_hidden)
-            self.check_boundary(self.bias_boundary, ret.bias_hidden)
-            self.check_boundary(self.timec_boundary, ret.timec_hidden)
-            return ret
-        else:
-            raise NotImplemented
-
-    def __mul__(self, other):
-        if isinstance(other, int) or isinstance(other, float) or isinstance(other, long):
-            ret = ANNParametersArray()
-            ret.weights_boundary = self.weights_boundary
-            ret.bias_boundary = self.bias_boundary
-            ret.timec_boundary = self.timec_boundary
-
-            ret.weights = self.weights * other
-            ret.bias = self.bias * other
-            ret.weights_hidden = self.weights_hidden * other
-            ret.bias_hidden = self.bias_hidden * other
-            ret.timec_hidden = self.timec_hidden * other
-
-            self.check_boundary(self.weights_boundary, ret.weights)
-            self.check_boundary(self.bias_boundary, ret.bias)
-            self.check_boundary(self.weights_boundary, ret.weights_hidden)
-            self.check_boundary(self.bias_boundary, ret.bias_hidden)
-            self.check_boundary(self.timec_boundary, ret.timec_hidden)
-            return ret
-        else:
-            raise NotImplemented
-
-    def __rmul__(self, other):
-        if isinstance(other, int) or isinstance(other, float) or isinstance(other, long):
-            return self.__mul__(other)
-        else:
-            raise NotImplemented
-
-    @staticmethod
-    def check_boundary(boundary, array):
-        for i in range(array.size):
-            if array[i] < boundary[0]:
-                array[i] = boundary[0]
-            elif array[i] > boundary[1]:
-                array[i] = boundary[1]
+    def __len__(self):
+        return len(self.encoded) * 8
 
     def export(self):
-        return {
-            'weights': self.weights,
-            'bias': self.bias,
-            'weights_hidden': self.weights_hidden,
-            'bias_hidden': self.bias_hidden,
-            'timec_hidden': self.timec_hidden
-        }
+        return self.__str__()
 
     @staticmethod
     def load(data):
         self = ANNParametersArray()
-        self.weights = np.array(data['weights'])
-        self.bias = np.array(data['bias'])
-        self.weights_hidden = np.array(data['weights_hidden'])
-        self.bias_hidden = np.array(data['bias_hidden'])
-        self.timec_hidden = np.array(data['timec_hidden'])
+        self.encoded = data.decode('hex')
         return self
+
+    def decode(self):
+        ret = {
+            'weights': np.zeros(NUM_ACTUATORS * (NUM_SENSORS + NUM_HIDDEN), dtype=np.float32),
+            'bias': np.zeros(NUM_ACTUATORS, dtype=np.float32),
+            'weights_hidden': np.zeros(NUM_HIDDEN * NUM_SENSORS, dtype=np.float32),
+            'bias_hidden': np.zeros(NUM_HIDDEN, dtype=np.float32),
+            'timec_hidden': np.zeros(NUM_HIDDEN, dtype=np.float32)
+        }
+
+        pos = 0
+
+        for i in xrange(NUM_ACTUATORS * (NUM_SENSORS + NUM_HIDDEN)):
+            ret['weights'][i] = self._decode_value(self.encoded[pos], self.WEIGHTS_BOUNDARY)
+            pos += 1
+
+        for i in xrange(NUM_ACTUATORS):
+            ret['bias'][i] = self._decode_value(self.encoded[pos], self.BIAS_BOUNDARY)
+            pos += 1
+
+        for i in xrange(NUM_HIDDEN * NUM_SENSORS):
+            ret['weights_hidden'][i] = self._decode_value(self.encoded[pos], self.WEIGHTS_BOUNDARY)
+            pos += 1
+
+        for i in xrange(NUM_HIDDEN):
+            ret['bias_hidden'][i] = self._decode_value(self.encoded[pos], self.BIAS_BOUNDARY)
+            pos += 1
+
+        for i in xrange(NUM_HIDDEN):
+            ret['timec_hidden'][i] = self._decode_value(self.encoded[pos], self.TIMEC_BOUNDARY)
+            pos += 1
+
+        return ret
+
+    def _decode_value(self, value, boundary):
+        return float(ord(value) * (boundary[1] - boundary[0])) / 255.0 + boundary[0]
 
     def merge(self, point, other):
         if len(self) != len(other):
             raise Exception('Cannot merge arrays of different sizes.')
 
-        if (point < 0) or (point > len(self) - 1):
+        if (point < 0) or (point > (len(self) - 1)):
             raise Exception('Point out of bounds.')
 
-        if point < len(self.weights):
-            for i in xrange(point, len(self.weights)):
-                self.weights[i] = other.weights[i]
-            point = 0
-        else:
-            point -= len(self.weights)
+        idx = int(math.floor(float(point) / 8.0))
+        bit = 7 - (point % 8)  # big endian
 
-        if point < len(self.bias):
-            for i in xrange(point, len(self.bias)):
-                self.bias[i] = other.bias[i]
-            point = 0
-        else:
-            point -= len(self.bias)
+        new = self.encoded[:idx]
 
-        if point < len(self.weights_hidden):
-            for i in xrange(point, len(self.weights_hidden)):
-                self.weights_hidden[i] = other.weights_hidden[i]
-            point = 0
-        else:
-            point -= len(self.weights_hidden)
+        sc = ord(self.encoded[idx])
+        oc = ord(other.encoded[idx])
+        r = 0
+        for i in range(8):
+            if (i < bit):
+                r |= sc & (2 ** i)
+            else:
+                r |= oc & (2 ** i)
+        new += chr(r)
 
-        if point < len(self.bias_hidden):
-            for i in xrange(point, len(self.bias_hidden)):
-                self.bias_hidden[i] = other.bias_hidden[i]
-            point = 0
-        else:
-            point -= len(self.bias_hidden)
+        new += other.encoded[(idx+1):]
 
-        if point < len(self.timec_hidden):
-            for i in xrange(point, len(self.timec_hidden)):
-                self.timec_hidden[i] = other.timec_hidden[i]
-            point = 0
+        self.encoded = new
+
+    def flip(self, point):
+        if (point < 0) or (point > (len(self) - 1)):
+            raise Exception('Point out of bounds.')
+
+        idx = int(math.floor(float(point) / 8.0))
+        bit = 7 - (point % 8)  # big endian
+
+        c = ord(self.encoded[idx])
+        if (c & (2**bit) != 0):
+            c &= ~ (2**bit)
         else:
-            point -= len(self.timec_hidden)
+            c |= 2**bit
+
+        self.encoded = self.encoded[:idx] + chr(c) + self.encoded[(idx+1):]
