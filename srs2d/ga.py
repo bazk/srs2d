@@ -130,14 +130,16 @@ class GA(object):
             if (size % 2) != 0:
                 size -= 1
 
+            (count, scaled_pop) = self.scale(self.population)
+
             for i in xrange(0, size, 2):
-                genomeMom = self.select(self.population)
-                genomeDad = self.select(self.population)
+                genomeMom = self.select(scaled_pop, count).copy()
+                genomeDad = self.select(scaled_pop, count).copy()
 
                 if (args.pcrossover >= 1) or (random.random() < args.pcrossover):
-                   (sister, brother) = genomeMom.crossover(genomeDad)
+                    (sister, brother) = genomeMom.crossover(genomeDad)
                 else:
-                    (sister, brother) = (genomeMom.copy(), genomeDad.copy())
+                    (sister, brother) = (genomeMom, genomeDad)
 
                 sister.mutate(args.pmutation)
                 brother.mutate(args.pmutation)
@@ -155,7 +157,7 @@ class GA(object):
 
             __log__.info('[gen=%d] Evaluating population...', generation)
             self.evaluate(new_pop, args.distances)
-            new_pop =  sorted(new_pop, key=lambda ind: ind.fitness)
+            new_pop = sorted(new_pop, key=lambda ind: ind.fitness)
 
             for i in xrange(args.elite_size):
                 if elite[i].fitness > new_pop[i - args.elite_size].fitness:
@@ -199,8 +201,23 @@ class GA(object):
 
         run.done({'generation': generation, 'best_fitness': best.fitness, 'best_genome': best.genome.to_dict()})
 
-    def select(self, population):
-        return population.pop()
+    def scale(self, population):
+        ret = []
+        count = 0
+        i = 1
+        for p in population:
+            ret.append((i, p))
+            count += i
+            i += 1
+        return (count, ret)
+
+    def select(self, scaled_pop, count):
+        target = random.randint(1, count)
+        c = 0
+        for t, p in scaled_pop:
+            c += t
+            if c >= target:
+                return p
 
     def evaluate(self, population, distances):
         for i in xrange(len(population)):
