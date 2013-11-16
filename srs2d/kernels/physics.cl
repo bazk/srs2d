@@ -643,13 +643,14 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
 
             if (worlds[wid].robots[rid].last_target_area < 0)
             {
-                worlds[wid].robots[rid].energy = 2;
+                // worlds[wid].robots[rid].energy = 2;
                 worlds[wid].robots[rid].last_target_area = i;
             }
             else if (worlds[wid].robots[rid].last_target_area != i)
             {
-                worlds[wid].robots[rid].fitness += worlds[wid].robots[rid].energy;
-                worlds[wid].robots[rid].energy = 2;
+                // worlds[wid].robots[rid].fitness += worlds[wid].robots[rid].energy;
+                // worlds[wid].robots[rid].energy = 2;
+                worlds[wid].robots[rid].fitness += 1;
                 worlds[wid].robots[rid].last_target_area = i;
             }
         }
@@ -680,10 +681,10 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
         }
     }
 
-    worlds[wid].robots[rid].energy -= (fabs(worlds[wid].robots[rid].wheels_angular_speed.s0) + fabs(worlds[wid].robots[rid].wheels_angular_speed.s1)) /
-                                                                        (2 * worlds[wid].k * WHEELS_MAX_ANGULAR_SPEED);
-    if (worlds[wid].robots[rid].energy < 0)
-        worlds[wid].robots[rid].energy = 0;
+    // worlds[wid].robots[rid].energy -= (fabs(worlds[wid].robots[rid].wheels_angular_speed.s0) + fabs(worlds[wid].robots[rid].wheels_angular_speed.s1)) /
+    //                                                                     (2 * worlds[wid].k * WHEELS_MAX_ANGULAR_SPEED);
+    // if (worlds[wid].robots[rid].energy < 0)
+    //     worlds[wid].robots[rid].energy = 0;
 }
 
 __kernel void step_robots(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
@@ -761,16 +762,16 @@ __kernel void get_fitness(__global world_t *worlds, __global float *fitness)
     int wid = get_global_id(0);
     int rid;
 
-    float max_trips = ((2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS) * TB * TIME_STEP) / worlds[wid].targets_distance;
+    int max_trips = floor( ((2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS) * TB * TIME_STEP) / worlds[wid].targets_distance );
 
     float avg_fitness = 0;
 
     for (rid = 0; rid < ROBOTS_PER_WORLD; rid++) {
-        if (worlds[wid].robots[rid].collision_count > 0) {
-            // if one robot collided, fitness is zeroed
-            fitness[wid] = 0;
-            return;
-        }
+        // if (worlds[wid].robots[rid].collision_count > 0) {
+        //     // if one robot collided, fitness is zeroed
+        //     fitness[wid] = 0;
+        //     return;
+        // }
 
         avg_fitness += worlds[wid].robots[rid].fitness / max_trips;
     }
