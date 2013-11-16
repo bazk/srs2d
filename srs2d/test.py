@@ -35,7 +35,7 @@ class TestSimulator(object):
         if ann_params is not None:
             pos = physics.ANNParametersArray.load(ann_params)
         else:
-            pos = physics.ANNParametersArray(True)
+            pos = physics.ANNParametersArray()
 
         simulator.set_ann_parameters(0, pos)
         simulator.commit_ann_parameters()
