@@ -175,7 +175,7 @@ class GA(object):
                 run.progress(generation / float(args.num_generations), {
                     'generation': generation,
                     'best_fitness': best.fitness,
-                    'best_genome': best.genome.to_dict()
+                    'best_genome': str(best.genome)
                 })
 
                 if not args.no_save:
@@ -197,7 +197,7 @@ class GA(object):
 
             generation += 1
 
-        run.done({'generation': generation, 'best_fitness': best.fitness, 'best_genome': best.genome.to_dict()})
+        run.done({'generation': generation, 'best_fitness': best.fitness, 'best_genome': str(best.genome)})
 
     def select(self, population):
         return population.pop()
@@ -290,27 +290,9 @@ class GA(object):
 
         for p in xrange(len(self.population)):
             gen = self.population[p].genome
-            w = gen.to_dict()
 
-            for v in w['weights']:
-                f = (v - gen.weights_boundary[0]) / (gen.weights_boundary[1] - gen.weights_boundary[0])
-                blocks[p].append(int(255 * f))
-
-            for v in w['bias']:
-                f = (v - gen.bias_boundary[0]) / (gen.bias_boundary[1] - gen.bias_boundary[0])
-                blocks[p].append(int(255 * f))
-
-            for v in w['weights_hidden']:
-                f = (v - gen.weights_boundary[0]) / (gen.weights_boundary[1] - gen.weights_boundary[0])
-                blocks[p].append(int(255 * f))
-
-            for v in w['bias_hidden']:
-                f = (v - gen.bias_boundary[0]) / (gen.bias_boundary[1] - gen.bias_boundary[0])
-                blocks[p].append(int(255 * f))
-
-            for v in w['timec_hidden']:
-                f = (v - gen.timec_boundary[0]) / (gen.timec_boundary[1] - gen.timec_boundary[0])
-                blocks[p].append(int(255 * f))
+            for c in gen.encoded:
+                blocks[p].append(ord(c))
 
         for i in xrange(len(blocks[0])):
             line = []
@@ -329,7 +311,7 @@ class Individual(object):
         self.id = id(self)
 
         self.fitness = 0
-        self.genome = physics.ANNParametersArray(True)
+        self.genome = physics.ANNParametersArray()
 
     def __repr__(self):
         return 'Individual(%d, fitness=%.5f)' % (self.id, self.fitness)
@@ -343,8 +325,8 @@ class Individual(object):
     def crossover(self, other):
        """ Single Point crossover """
 
-       if len(self.genome) == 1:
-          raise Exception('Cannot crossover genome of length 1.')
+       if len(self.genome) <= 1:
+          raise Exception('Cannot crossover genome of length 1 or less.')
 
        point = random.randint(1, len(self.genome)-1)
 
@@ -357,31 +339,9 @@ class Individual(object):
        return (sister, brother)
 
     def mutate(self, pmutation):
-        for i in xrange(len(self.genome.weights)):
+        for i in xrange(len(self.genome)):
             if random.random() < pmutation:
-                self.genome.weights[i] += random.uniform(-5,5)
-
-        for i in xrange(len(self.genome.bias)):
-            if random.random() < pmutation:
-                self.genome.bias[i] += random.uniform(-5,5)
-
-        for i in xrange(len(self.genome.weights_hidden)):
-            if random.random() < pmutation:
-                self.genome.weights_hidden[i] += random.uniform(-5,5)
-
-        for i in xrange(len(self.genome.bias_hidden)):
-            if random.random() < pmutation:
-                self.genome.bias_hidden[i] += random.uniform(-5,5)
-
-        for i in xrange(len(self.genome.timec_hidden)):
-            if random.random() < pmutation:
-                self.genome.timec_hidden[i] += random.uniform(-1,1)
-
-        self.genome.check_boundary(self.genome.weights_boundary, self.genome.weights)
-        self.genome.check_boundary(self.genome.bias_boundary, self.genome.bias)
-        self.genome.check_boundary(self.genome.weights_boundary, self.genome.weights_hidden)
-        self.genome.check_boundary(self.genome.bias_boundary, self.genome.bias_hidden)
-        self.genome.check_boundary(self.genome.timec_boundary, self.genome.timec_hidden)
+                self.genome.flip(i)
 
 if __name__=="__main__":
     main()
