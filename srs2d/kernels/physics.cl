@@ -5,7 +5,7 @@
 #pragma OPENCL EXTENSION cl_amd_printf : enable
 
 #define ROBOT_BODY_RADIUS           0.035
-#define WHEELS_MAX_ANGULAR_SPEED    9.84
+#define WHEELS_MAX_ANGULAR_SPEED    0.984
 #define WHEELS_DISTANCE             0.055
 #define WHEELS_RADIUS               0.01
 #define IR_RADIUS                   0.025
