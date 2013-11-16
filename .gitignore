@@ -3,3 +3,6 @@
 dist
 build
 *.egg-info
+run-ga.sh
+run-pso.sh
+run-test.sh
