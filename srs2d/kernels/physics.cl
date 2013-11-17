@@ -371,29 +371,29 @@ __kernel void init_arenas(__global ranluxcl_state_t *ranluxcltab, __global world
     worlds[wid].walls[0].p1.y = -worlds[wid].arena_height / 2;
     worlds[wid].walls[0].p2.x = worlds[wid].arena_width / 2;
     worlds[wid].walls[0].p2.y = worlds[wid].arena_height / 2;
-    worlds[wid].walls[0].rot.sin = 0;
-    worlds[wid].walls[0].rot.cos = 1;
+    worlds[wid].walls[0].rot.sin = 1;
+    worlds[wid].walls[0].rot.cos = 0;
 
     worlds[wid].walls[1].p1.x = -worlds[wid].arena_width / 2;
     worlds[wid].walls[1].p1.y = worlds[wid].arena_height / 2;
     worlds[wid].walls[1].p2.x = worlds[wid].arena_width / 2;
     worlds[wid].walls[1].p2.y = worlds[wid].arena_height / 2;
-    worlds[wid].walls[1].rot.sin = 1;
-    worlds[wid].walls[1].rot.cos = 0;
+    worlds[wid].walls[1].rot.sin = 0;
+    worlds[wid].walls[1].rot.cos = -1;
 
     worlds[wid].walls[2].p1.x = -worlds[wid].arena_width / 2;
     worlds[wid].walls[2].p1.y = -worlds[wid].arena_height / 2;
     worlds[wid].walls[2].p2.x = -worlds[wid].arena_width / 2;
     worlds[wid].walls[2].p2.y = worlds[wid].arena_height / 2;
-    worlds[wid].walls[2].rot.sin = 0;
-    worlds[wid].walls[2].rot.cos = -1;
+    worlds[wid].walls[2].rot.sin = -1;
+    worlds[wid].walls[2].rot.cos = 0;
 
     worlds[wid].walls[3].p1.x = -worlds[wid].arena_width / 2;
     worlds[wid].walls[3].p1.y = -worlds[wid].arena_height / 2;
     worlds[wid].walls[3].p2.x = worlds[wid].arena_width / 2;
     worlds[wid].walls[3].p2.y = -worlds[wid].arena_height / 2;
-    worlds[wid].walls[3].rot.sin = -1;
-    worlds[wid].walls[3].rot.cos = 0;
+    worlds[wid].walls[3].rot.sin = 0;
+    worlds[wid].walls[3].rot.cos = 1;
 }
 
 __kernel void init_worlds(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds, float targets_distance)
@@ -606,7 +606,7 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
 
                 int dist_idx = (int) floor((dist - IR_WALL_DIST_MIN) / IR_WALL_DIST_INTERVAL);
 
-                float diff_angle = angle_rot(worlds[wid].walls[i].rot) - angle_rot(worlds[wid].robots[rid].transform.rot);
+                float diff_angle = angle_rot(worlds[wid].robots[rid].transform.rot) - angle_rot(worlds[wid].walls[i].rot);
 
                 if (diff_angle >= (2*M_PI))
                     diff_angle -= 2*M_PI;
@@ -645,7 +645,7 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
 
             float s = worlds[wid].robots[otherid].transform.pos.y - worlds[wid].robots[rid].transform.pos.y;
             float c = worlds[wid].robots[otherid].transform.pos.x - worlds[wid].robots[rid].transform.pos.x;
-            float diff_angle = angle(s, c) - angle_rot(worlds[wid].robots[rid].transform.rot);
+            float diff_angle = angle_rot(worlds[wid].robots[rid].transform.rot) - angle(s, c) - (M_PI / 2.0f);
 
             if (diff_angle >= (2*M_PI))
                 diff_angle -= 2*M_PI;
