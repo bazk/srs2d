@@ -1,6 +1,7 @@
 #include <pyopencl-ranluxcl.cl>
 
 #include <samples.h>
+#include <ir_wall_samples.h>
 
 #pragma OPENCL EXTENSION cl_amd_printf : enable
 
@@ -22,19 +23,19 @@
 #define NUM_ACTUATORS   4
 #define NUM_HIDDEN      3
 
-#define IN_proximity0   1
-#define IN_proximity1   2
-#define IN_proximity2   4
-#define IN_proximity3   8
-#define IN_proximity4   16
-#define IN_proximity5   32
-#define IN_proximity6   64
-#define IN_proximity7   128
-#define IN_camera0      256
-#define IN_camera1      512
-#define IN_camera2      1024
-#define IN_camera3      2048
-#define IN_ground       4096
+#define IN_proximity0   0
+#define IN_proximity1   1
+#define IN_proximity2   2
+#define IN_proximity3   3
+#define IN_proximity4   4
+#define IN_proximity5   5
+#define IN_proximity6   6
+#define IN_proximity7   7
+#define IN_camera0      8
+#define IN_camera1      9
+#define IN_camera2      10
+#define IN_camera3      11
+#define IN_ground       12
 
 #define OUT_wheels0     0
 #define OUT_wheels1     1
@@ -56,6 +57,12 @@ typedef struct {
 } transform_t;
 
 typedef struct {
+    float2 p1;
+    float2 p2;
+    rotation_t rot;
+} wall_t;
+
+typedef struct {
     transform_t transform;
     float2 wheels_angular_speed;
     int front_led;
@@ -66,7 +73,7 @@ typedef struct {
     int last_target_area;
     int collision_count;
 
-    unsigned int sensors;
+    float sensors[NUM_SENSORS];
     float actuators[NUM_ACTUATORS];
     float hidden[NUM_HIDDEN];
 } robot_t;
@@ -83,6 +90,8 @@ typedef struct {
 
     float arena_height;
     float arena_width;
+
+    wall_t walls[4];
 
     float targets_distance;
 
@@ -120,6 +129,10 @@ float angle(float sin, float cos) {
     float a = atan2(sin, cos);
     if (a < 0) return a + 2*M_PI;
     return a;
+}
+
+float angle_rot(rotation_t rot) {
+    return angle(rot.sin, rot.cos);
 }
 
 unsigned int uint_exp2(unsigned int n)
@@ -341,7 +354,7 @@ __kernel void init_ranluxcl(uint seed, __global ranluxcl_state_t *ranluxcltab)
     ranluxcl_initialization(seed, ranluxcltab);
 }
 
-__kernel void init_worlds(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds, float targets_distance)
+__kernel void init_arenas(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
 {
     int wid = get_global_id(0);
 
@@ -350,13 +363,48 @@ __kernel void init_worlds(__global ranluxcl_state_t *ranluxcltab, __global world
     float4 random = ranluxcl32(&ranluxclstate);
     ranluxcl_upload_seed(&ranluxclstate, ranluxcltab);
 
+    worlds[wid].arena_height = ARENA_HEIGHT;
+    worlds[wid].arena_width = ARENA_WIDTH_MIN + random.s0 * (ARENA_WIDTH_MAX - ARENA_WIDTH_MIN);
+
+    worlds[wid].walls[0].p1.x = worlds[wid].arena_width / 2;
+    worlds[wid].walls[0].p1.y = -worlds[wid].arena_height / 2;
+    worlds[wid].walls[0].p2.x = worlds[wid].arena_width / 2;
+    worlds[wid].walls[0].p2.y = worlds[wid].arena_height / 2;
+    worlds[wid].walls[0].rot.sin = 0;
+    worlds[wid].walls[0].rot.cos = 1;
+
+    worlds[wid].walls[0].p1.x = -worlds[wid].arena_width / 2;
+    worlds[wid].walls[0].p1.y = worlds[wid].arena_height / 2;
+    worlds[wid].walls[0].p2.x = worlds[wid].arena_width / 2;
+    worlds[wid].walls[0].p2.y = worlds[wid].arena_height / 2;
+    worlds[wid].walls[0].rot.sin = 1;
+    worlds[wid].walls[0].rot.cos = 0;
+
+    worlds[wid].walls[0].p1.x = -worlds[wid].arena_width / 2;
+    worlds[wid].walls[0].p1.y = -worlds[wid].arena_height / 2;
+    worlds[wid].walls[0].p2.x = -worlds[wid].arena_width / 2;
+    worlds[wid].walls[0].p2.y = worlds[wid].arena_height / 2;
+    worlds[wid].walls[0].rot.sin = 0;
+    worlds[wid].walls[0].rot.cos = -1;
+
+    worlds[wid].walls[0].p1.x = -worlds[wid].arena_width / 2;
+    worlds[wid].walls[0].p1.y = -worlds[wid].arena_height / 2;
+    worlds[wid].walls[0].p2.x = worlds[wid].arena_width / 2;
+    worlds[wid].walls[0].p2.y = -worlds[wid].arena_height / 2;
+    worlds[wid].walls[0].rot.sin = -1;
+    worlds[wid].walls[0].rot.cos = 0;
+}
+
+__kernel void init_worlds(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds, float targets_distance)
+{
+    int wid = get_global_id(0);
+
     worlds[wid].targets_distance = targets_distance;
 
     // k = number of time steps needed for a robot to consume one unit of energy while moving at maximum speed
     worlds[wid].k = (targets_distance / (2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS)) / TIME_STEP;
 
-    worlds[wid].arena_height = ARENA_HEIGHT;
-    worlds[wid].arena_width = ARENA_WIDTH_MIN + random.s0 * (ARENA_WIDTH_MAX - ARENA_WIDTH_MIN);
+    init_arenas(ranluxcltab, worlds);
 
     float x = sqrt(pow((targets_distance / 2.0), 2) / 2.0);
 
@@ -387,7 +435,8 @@ __kernel void init_robots(__global ranluxcl_state_t *ranluxcltab, __global world
     worlds[wid].robots[rid].last_target_area = -1;
     worlds[wid].robots[rid].collision_count = 0;
 
-    worlds[wid].robots[rid].sensors = 0;
+    for (i=0; i<NUM_SENSORS; i++)
+        worlds[wid].robots[rid].sensors[i] = 0;
 
     for (i=0; i<NUM_ACTUATORS; i++)
         worlds[wid].robots[rid].actuators[i] = 0;
@@ -435,8 +484,7 @@ __kernel void step_controllers(__global ranluxcl_state_t *ranluxcltab, __global 
         aux = 0;
 
         for (s=0; s<NUM_SENSORS; s++)
-            aux += worlds[wid].weights_hidden[h*NUM_SENSORS+s] *
-                  ( ((worlds[wid].robots[rid].sensors & uint_exp2(s)) == 0) ? 0 : 1 );
+            aux += worlds[wid].weights_hidden[h*NUM_SENSORS+s] * worlds[wid].robots[rid].sensors[s];
 
         aux += worlds[wid].bias_hidden[h];
 
@@ -449,7 +497,7 @@ __kernel void step_controllers(__global ranluxcl_state_t *ranluxcltab, __global 
         aux = 0;
 
         for (s=0; s<NUM_SENSORS; s++)
-            aux += worlds[wid].weights[a*(NUM_SENSORS+NUM_HIDDEN)+s] * ( ((worlds[wid].robots[rid].sensors & uint_exp2(s)) == 0) ? 0 : 1 );
+            aux += worlds[wid].weights[a*(NUM_SENSORS+NUM_HIDDEN)+s] * worlds[wid].robots[rid].sensors[s];
 
         for (h=0; h<NUM_HIDDEN; h++)
             aux += worlds[wid].weights[a*(NUM_SENSORS+NUM_HIDDEN)+NUM_SENSORS+h] * worlds[wid].robots[rid].hidden[h];
@@ -512,41 +560,62 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
     int wid = get_global_id(0);
     int rid = get_global_id(1);
 
-    unsigned int i, otherid;
+    unsigned int i, j, otherid;
 
-    worlds[wid].robots[rid].sensors = 0;
+    float2 pos = { worlds[wid].robots[rid].transform.pos.x,
+                   worlds[wid].robots[rid].transform.pos.y };
 
-    if ( ((worlds[wid].robots[rid].transform.pos.x+ROBOT_BODY_RADIUS+IR_RADIUS) > (worlds[wid].arena_width/2)) ||
-         ((worlds[wid].robots[rid].transform.pos.x-ROBOT_BODY_RADIUS-IR_RADIUS) < (-worlds[wid].arena_width/2)) ||
-         ((worlds[wid].robots[rid].transform.pos.y+ROBOT_BODY_RADIUS+IR_RADIUS) > (worlds[wid].arena_height/2)) ||
-         ((worlds[wid].robots[rid].transform.pos.y-ROBOT_BODY_RADIUS-IR_RADIUS) < (-worlds[wid].arena_height/2)) )
+    for (i=0; i<NUM_SENSORS; i++)
+        worlds[wid].robots[rid].sensors[i] = 0;
+
+    if ( ((pos.x+ROBOT_BODY_RADIUS+IR_WALL_DIST_MAX) > (worlds[wid].arena_width/2)) ||
+         ((pos.x-ROBOT_BODY_RADIUS-IR_WALL_DIST_MAX) < (-worlds[wid].arena_width/2)) ||
+         ((pos.y+ROBOT_BODY_RADIUS+IR_WALL_DIST_MAX) > (worlds[wid].arena_height/2)) ||
+         ((pos.y-ROBOT_BODY_RADIUS-IR_WALL_DIST_MAX) < (-worlds[wid].arena_height/2)) )
     {
-        if ( ((worlds[wid].robots[rid].transform.pos.x+ROBOT_BODY_RADIUS) > (worlds[wid].arena_width/2)) ||
-             ((worlds[wid].robots[rid].transform.pos.x-ROBOT_BODY_RADIUS) < (-worlds[wid].arena_width/2)) ||
-             ((worlds[wid].robots[rid].transform.pos.y+ROBOT_BODY_RADIUS) > (worlds[wid].arena_height/2)) ||
-             ((worlds[wid].robots[rid].transform.pos.y-ROBOT_BODY_RADIUS) < (-worlds[wid].arena_height/2)) )
+        if ( ((pos.x+ROBOT_BODY_RADIUS) > (worlds[wid].arena_width/2)) ||
+             ((pos.x-ROBOT_BODY_RADIUS) < (-worlds[wid].arena_width/2)) ||
+             ((pos.y+ROBOT_BODY_RADIUS) > (worlds[wid].arena_height/2)) ||
+             ((pos.y-ROBOT_BODY_RADIUS) < (-worlds[wid].arena_height/2)) )
         {
             worlds[wid].robots[rid].collision = 1;
             return;
         }
 
-        for (i = 0; i < 8; i++) {
-            float angle = (float) i * 2.0f * M_PI / 8.0f;
-            rotation_t rot;
-            rot.sin = sin(angle);
-            rot.cos = cos(angle);
+        // IR against 4 walls
+        for (i = 0; i < 4; i++)
+        {
+            float2 proj;
 
-            float2 vec = {ROBOT_BODY_RADIUS+IR_RADIUS, 0};
-            vec = rot_mul_vec(rot, vec);
+            if ((pos.x >= worlds[wid].walls[i].p1.x) && (pos.x <= worlds[wid].walls[i].p2.x))
+                proj.x = pos.x;
+            else
+                proj.x = worlds[wid].walls[i].p1.x;
 
-            float2 point = transform_mul_vec(worlds[wid].robots[rid].transform, vec);
+            if ((pos.y >= worlds[wid].walls[i].p1.y) && (pos.y <= worlds[wid].walls[i].p2.y))
+                proj.y = pos.y;
+            else
+                proj.y = worlds[wid].walls[i].p1.y;
 
-            if ( (point.x >= (worlds[wid].arena_width/2)) ||
-                 (point.x <= (-worlds[wid].arena_width/2)) ||
-                 (point.y >= (worlds[wid].arena_height/2)) ||
-                 (point.y <= (-worlds[wid].arena_height/2)) )
-            {
-                worlds[wid].robots[rid].sensors |= uint_exp2(i);
+            float dist = distance(proj, pos) - ROBOT_BODY_RADIUS;
+
+            if (dist <= IR_WALL_DIST_MAX) {
+                if (dist < IR_WALL_DIST_MIN)
+                    dist = IR_WALL_DIST_MIN;
+
+                int dist_idx = (int) floor((dist - IR_WALL_DIST_MIN) / IR_WALL_DIST_INTERVAL);
+
+                float diff_angle = angle_rot(worlds[wid].walls[i].rot) - angle_rot(worlds[wid].robots[rid].transform.rot);
+
+                if (diff_angle >= (2*M_PI))
+                    diff_angle -= 2*M_PI;
+                else if (diff_angle < 0)
+                    diff_angle += 2*M_PI;
+
+                int angle_idx = (int) floor(diff_angle / (2*M_PI / IR_WALL_ANGLE_COUNT));
+
+                for (j = 0; j < 8; j++)
+                    worlds[wid].robots[rid].sensors[j] += ir_wall_samples[dist_idx][angle_idx][j] / 1024.0f;
             }
         }
     }
@@ -564,6 +633,7 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
             return;
         }
 
+        // IR against other robots
         if (dist < 2*ROBOT_BODY_RADIUS+IR_RADIUS)
         {
             float s = worlds[wid].robots[otherid].transform.pos.y - worlds[wid].robots[rid].transform.pos.y;
@@ -572,9 +642,10 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
             float a = angle(s, c) - angle(worlds[wid].robots[rid].transform.rot.sin, worlds[wid].robots[rid].transform.rot.cos);
 
             int idx = (int) floor(fabs(a) / (2*M_PI/8)) % 8;
-            worlds[wid].robots[rid].sensors |= uint_exp2(idx);
+            worlds[wid].robots[rid].sensors[idx] = 1;
         }
 
+        // other robots in camera
         if (dist < CAMERA_RADIUS + ROBOT_BODY_RADIUS + LED_PROTUBERANCE)
         {
             float2 front = {(ROBOT_BODY_RADIUS + LED_PROTUBERANCE), 0};
@@ -596,13 +667,13 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
                          ((angle_robot-angle_dest) <= (CAMERA_ANGLE/2)) )
                     {
                         if (!raycast(worlds, orig, dest))
-                            worlds[wid].robots[rid].sensors |= IN_camera0;
+                            worlds[wid].robots[rid].sensors[IN_camera0] = 1.0;
                     }
                     else if ( (angle_dest >= angle_robot) &&
                               ((angle_dest-angle_robot) <= (CAMERA_ANGLE/2)) )
                     {
                         if (!raycast(worlds, orig, dest))
-                            worlds[wid].robots[rid].sensors |= IN_camera1;
+                            worlds[wid].robots[rid].sensors[IN_camera1] = 1.0;
                     }
                 }
             }
@@ -620,13 +691,13 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
                          ((angle_robot-angle_dest) <= (CAMERA_ANGLE/2)) )
                     {
                         if (!raycast(worlds, orig, dest))
-                            worlds[wid].robots[rid].sensors |= IN_camera2;
+                            worlds[wid].robots[rid].sensors[IN_camera2] = 1.0;
                     }
                     else if ( (angle_dest >= angle_robot) &&
                          ((angle_dest-angle_robot) <= (CAMERA_ANGLE/2)) )
                     {
                         if (!raycast(worlds, orig, dest))
-                            worlds[wid].robots[rid].sensors |= IN_camera3;
+                            worlds[wid].robots[rid].sensors[IN_camera3] = 1.0;
                     }
                 }
             }
@@ -637,9 +708,10 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
     {
         float dist = distance(worlds[wid].robots[rid].transform.pos, worlds[wid].target_areas[i].center);
 
+        // ground sensor
         if (dist < worlds[wid].target_areas[i].radius)
         {
-            worlds[wid].robots[rid].sensors |= IN_ground;
+            worlds[wid].robots[rid].sensors[IN_ground] = 1.0;
 
             if (worlds[wid].robots[rid].last_target_area < 0)
             {
@@ -655,6 +727,8 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
             }
         }
 
+
+        // target area led in camera
         if (dist < CAMERA_RADIUS + ROBOT_BODY_RADIUS)
         {
             float2 orig = worlds[wid].robots[rid].transform.pos;
@@ -669,16 +743,23 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
                      ((angle_robot-angle_dest) <= (CAMERA_ANGLE/2)) )
                 {
                     if (!raycast(worlds, orig, dest))
-                        worlds[wid].robots[rid].sensors |= IN_camera2;
+                        worlds[wid].robots[rid].sensors[IN_camera2] = 1.0;
                 }
                 else if ( (angle_dest >= angle_robot) &&
                      ((angle_dest-angle_robot) <= (CAMERA_ANGLE/2)) )
                 {
                     if (!raycast(worlds, orig, dest))
-                        worlds[wid].robots[rid].sensors |= IN_camera3;
+                        worlds[wid].robots[rid].sensors[IN_camera3] = 1.0;
                 }
             }
         }
+    }
+
+    for (i=0; i<NUM_SENSORS; i++) {
+        if (worlds[wid].robots[rid].sensors[i] > 1)
+            worlds[wid].robots[rid].sensors[i] = 1;
+        if (worlds[wid].robots[rid].sensors[i] < 0)
+            worlds[wid].robots[rid].sensors[i] = 0;
     }
 
     // worlds[wid].robots[rid].energy -= (fabs(worlds[wid].robots[rid].wheels_angular_speed.s0) + fabs(worlds[wid].robots[rid].wheels_angular_speed.s1)) /
@@ -800,7 +881,7 @@ __kernel void get_ann_state(__global world_t *worlds, __global unsigned int *sen
     int wid = get_global_id(0);
     int rid = get_global_id(1);
 
-    sensors[wid*ROBOTS_PER_WORLD+rid] = worlds[wid].robots[rid].sensors;
+    sensors[wid*ROBOTS_PER_WORLD+rid] = 0;
 
     actuators[wid*ROBOTS_PER_WORLD+rid].s0 = worlds[wid].robots[rid].actuators[OUT_wheels0];
     actuators[wid*ROBOTS_PER_WORLD+rid].s1 = worlds[wid].robots[rid].actuators[OUT_wheels1];
