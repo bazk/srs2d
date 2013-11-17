@@ -728,14 +728,14 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
 
             if (worlds[wid].robots[rid].last_target_area < 0)
             {
-                // worlds[wid].robots[rid].energy = 2;
+                worlds[wid].robots[rid].energy = 2;
                 worlds[wid].robots[rid].last_target_area = i;
             }
             else if (worlds[wid].robots[rid].last_target_area != i)
             {
-                // worlds[wid].robots[rid].fitness += worlds[wid].robots[rid].energy;
-                // worlds[wid].robots[rid].energy = 2;
-                worlds[wid].robots[rid].fitness += 1;
+                worlds[wid].robots[rid].fitness += worlds[wid].robots[rid].energy;
+                worlds[wid].robots[rid].energy = 2;
+                // worlds[wid].robots[rid].fitness += 1;
                 worlds[wid].robots[rid].last_target_area = i;
             }
         }
@@ -775,10 +775,10 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
             worlds[wid].robots[rid].sensors[i] = 0;
     }
 
-    // worlds[wid].robots[rid].energy -= (fabs(worlds[wid].robots[rid].wheels_angular_speed.s0) + fabs(worlds[wid].robots[rid].wheels_angular_speed.s1)) /
-    //                                                                     (2 * worlds[wid].k * WHEELS_MAX_ANGULAR_SPEED);
-    // if (worlds[wid].robots[rid].energy < 0)
-    //     worlds[wid].robots[rid].energy = 0;
+    worlds[wid].robots[rid].energy -= (fabs(worlds[wid].robots[rid].wheels_angular_speed.s0) + fabs(worlds[wid].robots[rid].wheels_angular_speed.s1)) /
+                                                                        (2 * worlds[wid].k * WHEELS_MAX_ANGULAR_SPEED);
+    if (worlds[wid].robots[rid].energy < 0)
+        worlds[wid].robots[rid].energy = 0;
 }
 
 __kernel void step_robots(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
