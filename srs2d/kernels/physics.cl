@@ -1,6 +1,6 @@
 #include <pyopencl-ranluxcl.cl>
 
-#include <samples.h>
+#include <motor_samples.h>
 #include <ir_wall_samples.h>
 #include <ir_round_samples.h>
 
@@ -541,11 +541,11 @@ __kernel void step_dynamics(__global ranluxcl_state_t *ranluxcltab, __global wor
 
     float dt = 1.0f; // should be TIME_STEP (needs interpolation)
 
-    int v1 = round(worlds[wid].robots[rid].actuators[OUT_wheels1] * 24);
-    int v2 = round(worlds[wid].robots[rid].actuators[OUT_wheels0] * 24);
+    int v1 = round(worlds[wid].robots[rid].actuators[OUT_wheels1] * (MOTOR_SAMPLE_COUNT - 1));
+    int v2 = round(worlds[wid].robots[rid].actuators[OUT_wheels0] * (MOTOR_SAMPLE_COUNT - 1));
 
-    float angular_speed = motor_angular_speed_samples[v1][v2] * M_PI / 180.0f;
-    float linear_speed = motor_linear_speed_samples[v1][v2] / 100.0f;
+    float angular_speed = MOTOR_ANGULAR_SPEED_SAMPLES[v1][v2] * M_PI / 180.0f;
+    float linear_speed = MOTOR_LINEAR_SPEED_SAMPLES[v1][v2] / 100.0f;
 
     worlds[wid].robots[rid].transform.pos.x += linear_speed * worlds[wid].robots[rid].transform.rot.cos * dt;
     worlds[wid].robots[rid].transform.pos.y += linear_speed * worlds[wid].robots[rid].transform.rot.sin * dt;
