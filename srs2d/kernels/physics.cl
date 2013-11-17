@@ -861,11 +861,11 @@ __kernel void get_fitness(__global world_t *worlds, __global float *fitness)
     float avg_fitness = 0;
 
     for (rid = 0; rid < ROBOTS_PER_WORLD; rid++) {
-        // if (worlds[wid].robots[rid].collision_count > 0) {
-        //     // if one robot collided, fitness is zeroed
-        //     fitness[wid] = 0;
-        //     return;
-        // }
+        if (worlds[wid].robots[rid].collision_count > 0) {
+            // if one robot collided, fitness is zeroed
+            fitness[wid] = 0;
+            return;
+        }
 
         avg_fitness += worlds[wid].robots[rid].fitness / max_trips;
     }
