@@ -1,3 +1,6 @@
+#ifndef __IR_ROUND_SAMPLES_CL__
+#define __IR_ROUND_SAMPLES_CL__
+
 #define IR_ROUND_DIST_COUNT      20
 #define IR_ROUND_ANGLE_COUNT     180
 #define IR_ROUND_DIST_INTERVAL   0.02
@@ -3627,3 +3630,5 @@ __constant float IR_ROUND_SAMPLES[IR_ROUND_DIST_COUNT][IR_ROUND_ANGLE_COUNT][8] 
         { 0, 0, 0, 5, 0, 9, 0, 0 }
     }
 };
+
+#endif

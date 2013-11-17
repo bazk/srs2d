@@ -1,3 +1,6 @@
+#ifndef __IR_WALL_SAMPLES_CL__
+#define __IR_WALL_SAMPLES_CL__
+
 #define IR_WALL_DIST_COUNT      20
 #define IR_WALL_ANGLE_COUNT     180
 #define IR_WALL_DIST_INTERVAL   0.02
@@ -3646,3 +3649,5 @@ __constant float IR_WALL_SAMPLES[IR_WALL_DIST_COUNT][IR_WALL_ANGLE_COUNT][8] = {
         { 0, 0, 0, 0, 0, 1, 0, 4 }
     }
 };
+
+#endif
