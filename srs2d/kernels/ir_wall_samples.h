@@ -4,7 +4,7 @@
 #define IR_WALL_DIST_MIN        0.05
 #define IR_WALL_DIST_MAX        IR_WALL_DIST_MIN + (IR_WALL_DIST_COUNT * IR_WALL_DIST_INTERVAL)
 
-__constant float ir_wall_samples[IR_WALL_DIST_COUNT][IR_WALL_ANGLE_COUNT][8] = {
+__constant float IR_WALL_SAMPLES[IR_WALL_DIST_COUNT][IR_WALL_ANGLE_COUNT][8] = {
     {
         { 2, 1023, 1023, 1023, 1023, 0, 4, 4 },
         { 0, 954, 1023, 1023, 1023, 7, 6, 0 },

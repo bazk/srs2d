@@ -2,6 +2,7 @@
 
 #include <samples.h>
 #include <ir_wall_samples.h>
+#include <ir_round_samples.h>
 
 #pragma OPENCL EXTENSION cl_amd_printf : enable
 
@@ -506,6 +507,9 @@ __kernel void step_controllers(__global ranluxcl_state_t *ranluxcltab, __global 
 
         worlds[wid].robots[rid].actuators[a] = sigmoid(aux);
     }
+
+    worlds[wid].robots[rid].actuators[OUT_wheels0] = 1;
+    worlds[wid].robots[rid].actuators[OUT_wheels1] = 1;
 }
 
 __kernel void step_actuators(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
@@ -568,10 +572,10 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
     for (i=0; i<NUM_SENSORS; i++)
         worlds[wid].robots[rid].sensors[i] = 0;
 
-    if ( ((pos.x+ROBOT_BODY_RADIUS+IR_WALL_DIST_MAX) > (worlds[wid].arena_width/2)) ||
-         ((pos.x-ROBOT_BODY_RADIUS-IR_WALL_DIST_MAX) < (-worlds[wid].arena_width/2)) ||
-         ((pos.y+ROBOT_BODY_RADIUS+IR_WALL_DIST_MAX) > (worlds[wid].arena_height/2)) ||
-         ((pos.y-ROBOT_BODY_RADIUS-IR_WALL_DIST_MAX) < (-worlds[wid].arena_height/2)) )
+    if ( ((pos.x+(ROBOT_BODY_RADIUS+IR_WALL_DIST_MAX)) > (worlds[wid].arena_width/2)) ||
+         ((pos.x-(ROBOT_BODY_RADIUS+IR_WALL_DIST_MAX)) < (-worlds[wid].arena_width/2)) ||
+         ((pos.y+(ROBOT_BODY_RADIUS+IR_WALL_DIST_MAX)) > (worlds[wid].arena_height/2)) ||
+         ((pos.y-(ROBOT_BODY_RADIUS+IR_WALL_DIST_MAX)) < (-worlds[wid].arena_height/2)) )
     {
         if ( ((pos.x+ROBOT_BODY_RADIUS) > (worlds[wid].arena_width/2)) ||
              ((pos.x-ROBOT_BODY_RADIUS) < (-worlds[wid].arena_width/2)) ||
@@ -615,7 +619,7 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
                 int angle_idx = (int) floor(diff_angle / (2*M_PI / IR_WALL_ANGLE_COUNT));
 
                 for (j = 0; j < 8; j++)
-                    worlds[wid].robots[rid].sensors[j] += ir_wall_samples[dist_idx][angle_idx][j] / 1024.0f;
+                    worlds[wid].robots[rid].sensors[j] += IR_WALL_SAMPLES[dist_idx][angle_idx][j] / 1024.0f;
             }
         }
     }
@@ -634,15 +638,27 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
         }
 
         // IR against other robots
-        if (dist < 2*ROBOT_BODY_RADIUS+IR_RADIUS)
+        if (dist < (2*ROBOT_BODY_RADIUS+IR_ROUND_DIST_MAX))
         {
+            float d = dist - 2*ROBOT_BODY_RADIUS;
+            if (d < IR_ROUND_DIST_MIN)
+                d = IR_ROUND_DIST_MIN;
+
+            int dist_idx = (int) floor((d - IR_ROUND_DIST_MIN) / IR_ROUND_DIST_INTERVAL);
+
             float s = worlds[wid].robots[otherid].transform.pos.y - worlds[wid].robots[rid].transform.pos.y;
             float c = worlds[wid].robots[otherid].transform.pos.x - worlds[wid].robots[rid].transform.pos.x;
+            float diff_angle = angle(s, c) - angle_rot(worlds[wid].robots[rid].transform.rot);
 
-            float a = angle(s, c) - angle(worlds[wid].robots[rid].transform.rot.sin, worlds[wid].robots[rid].transform.rot.cos);
+            if (diff_angle >= (2*M_PI))
+                diff_angle -= 2*M_PI;
+            else if (diff_angle < 0)
+                diff_angle += 2*M_PI;
 
-            int idx = (int) floor(fabs(a) / (2*M_PI/8)) % 8;
-            worlds[wid].robots[rid].sensors[idx] = 1;
+            int angle_idx = (int) floor(diff_angle / (2*M_PI / IR_ROUND_ANGLE_COUNT));
+
+            for (j = 0; j < 8; j++)
+                worlds[wid].robots[rid].sensors[j] += IR_ROUND_SAMPLES[dist_idx][angle_idx][j] / 1024.0f;
         }
 
         // other robots in camera
