@@ -374,26 +374,26 @@ __kernel void init_arenas(__global ranluxcl_state_t *ranluxcltab, __global world
     worlds[wid].walls[0].rot.sin = 0;
     worlds[wid].walls[0].rot.cos = 1;
 
-    worlds[wid].walls[0].p1.x = -worlds[wid].arena_width / 2;
-    worlds[wid].walls[0].p1.y = worlds[wid].arena_height / 2;
-    worlds[wid].walls[0].p2.x = worlds[wid].arena_width / 2;
-    worlds[wid].walls[0].p2.y = worlds[wid].arena_height / 2;
-    worlds[wid].walls[0].rot.sin = 1;
-    worlds[wid].walls[0].rot.cos = 0;
+    worlds[wid].walls[1].p1.x = -worlds[wid].arena_width / 2;
+    worlds[wid].walls[1].p1.y = worlds[wid].arena_height / 2;
+    worlds[wid].walls[1].p2.x = worlds[wid].arena_width / 2;
+    worlds[wid].walls[1].p2.y = worlds[wid].arena_height / 2;
+    worlds[wid].walls[1].rot.sin = 1;
+    worlds[wid].walls[1].rot.cos = 0;
 
-    worlds[wid].walls[0].p1.x = -worlds[wid].arena_width / 2;
-    worlds[wid].walls[0].p1.y = -worlds[wid].arena_height / 2;
-    worlds[wid].walls[0].p2.x = -worlds[wid].arena_width / 2;
-    worlds[wid].walls[0].p2.y = worlds[wid].arena_height / 2;
-    worlds[wid].walls[0].rot.sin = 0;
-    worlds[wid].walls[0].rot.cos = -1;
+    worlds[wid].walls[2].p1.x = -worlds[wid].arena_width / 2;
+    worlds[wid].walls[2].p1.y = -worlds[wid].arena_height / 2;
+    worlds[wid].walls[2].p2.x = -worlds[wid].arena_width / 2;
+    worlds[wid].walls[2].p2.y = worlds[wid].arena_height / 2;
+    worlds[wid].walls[2].rot.sin = 0;
+    worlds[wid].walls[2].rot.cos = -1;
 
-    worlds[wid].walls[0].p1.x = -worlds[wid].arena_width / 2;
-    worlds[wid].walls[0].p1.y = -worlds[wid].arena_height / 2;
-    worlds[wid].walls[0].p2.x = worlds[wid].arena_width / 2;
-    worlds[wid].walls[0].p2.y = -worlds[wid].arena_height / 2;
-    worlds[wid].walls[0].rot.sin = -1;
-    worlds[wid].walls[0].rot.cos = 0;
+    worlds[wid].walls[3].p1.x = -worlds[wid].arena_width / 2;
+    worlds[wid].walls[3].p1.y = -worlds[wid].arena_height / 2;
+    worlds[wid].walls[3].p2.x = worlds[wid].arena_width / 2;
+    worlds[wid].walls[3].p2.y = -worlds[wid].arena_height / 2;
+    worlds[wid].walls[3].rot.sin = -1;
+    worlds[wid].walls[3].rot.cos = 0;
 }
 
 __kernel void init_worlds(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds, float targets_distance)
@@ -507,9 +507,6 @@ __kernel void step_controllers(__global ranluxcl_state_t *ranluxcltab, __global 
 
         worlds[wid].robots[rid].actuators[a] = sigmoid(aux);
     }
-
-    worlds[wid].robots[rid].actuators[OUT_wheels0] = 1;
-    worlds[wid].robots[rid].actuators[OUT_wheels1] = 1;
 }
 
 __kernel void step_actuators(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
@@ -897,7 +894,13 @@ __kernel void get_ann_state(__global world_t *worlds, __global unsigned int *sen
     int wid = get_global_id(0);
     int rid = get_global_id(1);
 
-    sensors[wid*ROBOTS_PER_WORLD+rid] = 0;
+    unsigned int i, s = 0;
+
+    for (i=0; i < NUM_SENSORS; i++)
+        if (worlds[wid].robots[rid].sensors[i] > 0.5)
+            s |= uint_exp2(i);
+
+    sensors[wid*ROBOTS_PER_WORLD+rid] = s;
 
     actuators[wid*ROBOTS_PER_WORLD+rid].s0 = worlds[wid].robots[rid].actuators[OUT_wheels0];
     actuators[wid*ROBOTS_PER_WORLD+rid].s1 = worlds[wid].robots[rid].actuators[OUT_wheels1];
