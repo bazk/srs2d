@@ -165,6 +165,11 @@ class GA(object):
 
             self.population = sorted(new_pop, key=lambda ind: ind.fitness)
 
+            avg_fitness = 0
+            for ind in self.population:
+                avg_fitness += ind.fitness
+            avg_fitness /= len(self.population)
+
             best = self.population[-1]
             new_best = False
             if (best.fitness > last_best_fitness):
@@ -176,6 +181,7 @@ class GA(object):
             if new_best:
                 run.progress(generation / float(args.num_generations), {
                     'generation': generation,
+                    'avg_fitness': avg_fitness,
                     'best_fitness': best.fitness,
                     'best_genome': str(best.genome)
                 })
@@ -190,7 +196,12 @@ class GA(object):
                     run.upload('/tmp/simulation.srs', 'run-%02d-new-best-gen-%04d-fit-%.2f.srs' % (run.id, generation, fit) )
                     os.remove('/tmp/simulation.srs')
             else:
-                run.progress(generation / float(args.num_generations), {'generation': generation})
+                run.progress(generation / float(args.num_generations), {
+                    'generation': generation,
+                    'avg_fitness': avg_fitness,
+                    'best_fitness': best.fitness,
+                    'best_genome': str(best.genome)
+                })
 
             if args.image:
                 self.generate_image('/tmp/image.png')
@@ -199,7 +210,7 @@ class GA(object):
 
             generation += 1
 
-        run.done({'generation': generation, 'best_fitness': best.fitness, 'best_genome': str(best.genome)})
+        run.done({'generation': generation, 'avg_fitness': avg_fitness, 'best_fitness': best.fitness, 'best_genome': str(best.genome)})
 
     def scale(self, population):
         ret = []
