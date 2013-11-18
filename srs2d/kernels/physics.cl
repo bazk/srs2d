@@ -251,9 +251,13 @@ __kernel void step_controllers(__global ranluxcl_state_t *ranluxcltab, __global 
         worlds[wid].robots[rid].actuators[OUT_wheels0] = 0.5;
         worlds[wid].robots[rid].actuators[OUT_wheels1] = 0.5;
     }
-    else {
+    else if (rid == 1) {
         worlds[wid].robots[rid].actuators[OUT_wheels0] = 0.8;
         worlds[wid].robots[rid].actuators[OUT_wheels1] = 0.9;
+    }
+    else {
+        worlds[wid].robots[rid].actuators[OUT_wheels0] = 1;
+        worlds[wid].robots[rid].actuators[OUT_wheels1] = 1;
     }
 #endif
 }
@@ -288,19 +292,14 @@ __kernel void step_dynamics(__global ranluxcl_state_t *ranluxcltab, __global wor
         return;
     }
 
-    float dt = 1.0f; // should be TIME_STEP (needs interpolation)
-
     int v1 = round(worlds[wid].robots[rid].actuators[OUT_wheels1] * (MOTOR_SAMPLE_COUNT - 1));
     int v2 = round(worlds[wid].robots[rid].actuators[OUT_wheels0] * (MOTOR_SAMPLE_COUNT - 1));
 
-    float angular_speed = MOTOR_ANGULAR_SPEED_SAMPLES[v1][v2] * M_PI / 180.0f;
-    float linear_speed = MOTOR_LINEAR_SPEED_SAMPLES[v1][v2] / 100.0f;
-
-    worlds[wid].robots[rid].transform.pos.x += linear_speed * worlds[wid].robots[rid].transform.rot.cos * dt;
-    worlds[wid].robots[rid].transform.pos.y += linear_speed * worlds[wid].robots[rid].transform.rot.sin * dt;
+    worlds[wid].robots[rid].transform.pos.x += MOTOR_LINEAR_SPEED_SAMPLES[v1][v2] * worlds[wid].robots[rid].transform.rot.cos * TIME_STEP;
+    worlds[wid].robots[rid].transform.pos.y += MOTOR_LINEAR_SPEED_SAMPLES[v1][v2] * worlds[wid].robots[rid].transform.rot.sin * TIME_STEP;
 
     float angle_robot = angle(worlds[wid].robots[rid].transform.rot.sin, worlds[wid].robots[rid].transform.rot.cos);
-    angle_robot += angular_speed * dt;
+    angle_robot += MOTOR_ANGULAR_SPEED_SAMPLES[v1][v2] * TIME_STEP;
     worlds[wid].robots[rid].transform.rot.sin = sin(angle_robot);
     worlds[wid].robots[rid].transform.rot.cos = cos(angle_robot);
 }
