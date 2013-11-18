@@ -604,7 +604,7 @@ __kernel void get_fitness(__global world_t *worlds, __global float *fitness)
     int wid = get_global_id(0);
     int rid;
 
-    int max_trips = floor( ((2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS) * TB * TIME_STEP) / (worlds[wid].targets_distance - (2*TARGET_AREAS_RADIUS)) );
+    int max_trips = floor( ((2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS) * TB * TIME_STEP) / worlds[wid].targets_distance );
 
     float avg_fitness = 0;
 
