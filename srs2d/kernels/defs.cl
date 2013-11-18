@@ -2,9 +2,9 @@
 #define __DEFS_CL__
 
 #define ROBOT_BODY_RADIUS           0.035
-#define WHEELS_MAX_ANGULAR_SPEED    4.92
-#define WHEELS_DISTANCE             0.055
-#define WHEELS_RADIUS               0.01
+#define WHEELS_MAX_ANGULAR_SPEED    2.46
+#define WHEELS_DISTANCE             0.053
+#define WHEELS_RADIUS               0.02
 #define CAMERA_RADIUS               0.35
 #define CAMERA_ANGLE                2.5132741228718345 // 144 degrees (72+72)
 #define LED_PROTUBERANCE            0.007
