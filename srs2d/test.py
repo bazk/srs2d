@@ -30,7 +30,7 @@ class TestSimulator(object):
         context = cl.create_some_context()
         queue = cl.CommandQueue(context)
 
-        simulator = physics.Simulator(context, queue, num_worlds=1, num_robots=num_robots, ta=ta, tb=tb)
+        simulator = physics.Simulator(context, queue, num_worlds=1, num_robots=num_robots, ta=ta, tb=tb, test=True)
 
         if ann_params is not None:
             pos = physics.ANNParametersArray.load(ann_params)

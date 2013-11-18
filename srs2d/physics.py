@@ -66,7 +66,7 @@ class Simulator(object):
 
         print results
 
-    def __init__(self, context, queue, num_worlds=1, num_robots=9, ta=600, tb=5400, time_step=1/10.0):
+    def __init__(self, context, queue, num_worlds=1, num_robots=9, ta=600, tb=5400, time_step=1/10.0, test=False):
         global NUM_INPUTS, NUM_OUTPUTS
 
         self.step_count = 0.0
@@ -82,6 +82,9 @@ class Simulator(object):
         self.time_step = time_step
 
         options = '-DROBOTS_PER_WORLD=%d -DTIME_STEP=%f -DTA=%d -DTB=%d -I"%s"' % (num_robots, time_step, ta, tb, os.path.join(__dir__, 'kernels/'))
+
+        if (test):
+            options += ' -DTEST'
 
         src = open(os.path.join(__dir__, 'kernels/physics.cl'), 'r')
         self.prg = cl.Program(context, src.read()).build(options=options)

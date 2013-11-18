@@ -167,6 +167,21 @@ __kernel void init_robots(__global ranluxcl_state_t *ranluxcltab, __global world
 
     for (i=0; i<NUM_HIDDEN; i++)
         worlds[wid].robots[rid].hidden[i] = 0;
+
+#ifdef TEST
+    if (rid == 0) {
+        worlds[wid].robots[rid].transform.pos.x = 0;
+        worlds[wid].robots[rid].transform.pos.y = 0;
+        worlds[wid].robots[rid].transform.rot.sin = 0;
+        worlds[wid].robots[rid].transform.rot.cos = 1;
+    }
+    else if (rid == 1) {
+        worlds[wid].robots[rid].transform.pos.x = 0.15;
+        worlds[wid].robots[rid].transform.pos.y = 0;
+        worlds[wid].robots[rid].transform.rot.sin = 1;
+        worlds[wid].robots[rid].transform.rot.cos = 0;
+    }
+#endif
 }
 
 __kernel void set_ann_parameters(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds,
@@ -230,6 +245,17 @@ __kernel void step_controllers(__global ranluxcl_state_t *ranluxcltab, __global 
 
         worlds[wid].robots[rid].actuators[a] = sigmoid(aux);
     }
+
+#ifdef TEST
+    if (rid == 0) {
+        worlds[wid].robots[rid].actuators[OUT_wheels0] = 0.5;
+        worlds[wid].robots[rid].actuators[OUT_wheels1] = 0.5;
+    }
+    else {
+        worlds[wid].robots[rid].actuators[OUT_wheels0] = 0.8;
+        worlds[wid].robots[rid].actuators[OUT_wheels1] = 0.9;
+    }
+#endif
 }
 
 __kernel void step_actuators(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
