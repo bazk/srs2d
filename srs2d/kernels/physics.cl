@@ -425,13 +425,13 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
 
             if (worlds[wid].robots[rid].last_target_area != i)
             {
-                worlds[wid].robots[rid].last_target_area = i;
-
-                if (worlds[wid].robots[rid].collision == 0)
+                if ((worlds[wid].robots[rid].last_target_area >= 0) && (worlds[wid].robots[rid].collision == 0))
                 {
                     worlds[wid].robots[rid].fitness += worlds[wid].robots[rid].energy;
                     worlds[wid].robots[rid].energy = 2;
                 }
+
+                worlds[wid].robots[rid].last_target_area = i;
             }
         }
 
