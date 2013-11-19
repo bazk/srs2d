@@ -246,16 +246,6 @@ class GA(object):
                 self.simulator.init_worlds(d)
                 self.simulator.simulate()
 
-                # current_step = 0
-                # while current_step < (ta + tb):
-                #     self.simulator.step()
-
-                #     if (current_step <= ta):
-                #         self.simulator.set_fitness(0)
-                #         self.simulator.set_energy(2)
-
-                #     current_step += 1
-
                 fit = self.simulator.get_fitness()
                 for i in xrange(len(population)):
                     population[i].fitness += fit[i]
@@ -298,11 +288,7 @@ class GA(object):
 
         current_step = 0
         while current_step < (ta + tb):
-            simulator.step()
-
-            if (current_step <= ta):
-                simulator.set_fitness(0)
-                simulator.set_energy(2)
+            simulator.step(current_step)
 
             fitene = simulator.get_individual_fitness_energy()
             sensors, actuators, hidden = simulator.get_ann_state()

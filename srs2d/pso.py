@@ -219,11 +219,7 @@ class PSO(object):
 
         current_step = 0
         while current_step < (ta + tb):
-            simulator.step()
-
-            if (current_step <= ta):
-                simulator.set_fitness(0)
-                simulator.set_energy(2)
+            simulator.step(current_step)
 
             fitene = simulator.get_individual_fitness_energy()
             sensors, actuators, hidden = simulator.get_ann_state()

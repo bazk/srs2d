@@ -68,11 +68,7 @@ class TestSimulator(object):
 
             cur = 0
             while (cur < (ta+tb)):
-                simulator.step()
-
-                if (cur <= ta):
-                    simulator.set_fitness(0)
-                    simulator.set_energy(2)
+                simulator.step(cur)
 
                 fitene = simulator.get_individual_fitness_energy()
                 sensors, actuators, hidden = simulator.get_ann_state()

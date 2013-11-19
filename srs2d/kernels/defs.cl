@@ -66,6 +66,7 @@ typedef struct {
     float energy;
     float fitness;
     int last_target_area;
+    int entered_new_target_area;
     int collision_count;
 
     float sensors[NUM_SENSORS];

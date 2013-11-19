@@ -37,40 +37,8 @@ NUM_HIDDEN = 3
 __dir__ = os.path.dirname(__file__)
 
 class Simulator(object):
-    @staticmethod
-    def test_raycast():
-        context = cl.create_some_context()
-        queue = cl.CommandQueue(context)
-
-        options = '-DROBOTS_PER_WORLD=%d -DTIME_STEP=%f -DTA=%f -DTB=%f -DDYNAMICS_ITERATIONS=%d' % (3, 1/10.0, 600, 5400, 4)
-
-        src = open(os.path.join(__dir__, 'kernels/physics.cl'), 'r')
-        prg = cl.Program(context, src.read()).build(options=options)
-
-        # query the structs sizes
-        sizeof = np.zeros(1, dtype=np.int32)
-        sizeof_buf = cl.Buffer(context, 0, 4)
-
-        prg.size_of_world_t(queue, (1,), None, sizeof_buf).wait()
-        cl.enqueue_copy(queue, sizeof, sizeof_buf)
-        sizeof_world_t = int(sizeof[0])
-
-        # create buffers
-        worlds = cl.Buffer(context, 0, sizeof_world_t)
-
-        results = np.zeros(4, dtype=np.int32)
-        results_buf = cl.Buffer(context, cl.mem_flags.COPY_HOST_PTR, hostbuf=results)
-
-        prg.test_raycast(queue, (1,), None, worlds, results_buf).wait()
-        cl.enqueue_copy(queue, results, results_buf)
-
-        print results
-
     def __init__(self, context, queue, num_worlds=1, num_robots=9, ta=600, tb=5400, time_step=1/10.0, test=False):
         global NUM_INPUTS, NUM_OUTPUTS
-
-        self.step_count = 0.0
-        self.clock = 0.0
 
         self.context = context
         self.queue = queue
@@ -81,7 +49,7 @@ class Simulator(object):
         self.tb = tb
         self.time_step = time_step
 
-        options = '-DROBOTS_PER_WORLD=%d -DTIME_STEP=%f -DTA=%d -DTB=%d -I"%s"' % (num_robots, time_step, ta, tb, os.path.join(__dir__, 'kernels/'))
+        options = '-DNUM_WORLDS=%d -DROBOTS_PER_WORLD=%d -DTIME_STEP=%f -DTA=%d -DTB=%d -I"%s"' % (num_worlds, num_robots, time_step, ta, tb, os.path.join(__dir__, 'kernels/'))
 
         if (test):
             options += ' -DTEST'
@@ -141,14 +109,10 @@ class Simulator(object):
         init_worlds(self.queue, (self.num_worlds,), None, self.ranluxcl, self.worlds, target_areas_distance).wait()
         self.prg.init_robots(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
 
-    def step(self):
-        self.prg.step_actuators(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
-        self.prg.step_sensors(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
-        self.prg.step_collisions(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
-        self.prg.step_controllers(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
-
-        self.step_count += 1
-        self.clock += self.time_step
+    def step(self, current_step):
+        step_robots = self.prg.step_robots
+        step_robots.set_scalar_arg_dtypes((None, None, np.uint32))
+        step_robots(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds, current_step).wait()
 
     def simulate(self):
         if not self.need_global_barrier:
@@ -157,12 +121,7 @@ class Simulator(object):
         else:
             cur = 0
             while (cur < (self.ta+self.tb)):
-                self.step()
-
-                if (cur <= self.ta):
-                    self.set_fitness(0)
-                    self.set_energy(2)
-
+                self.step(cur)
                 cur += 1
 
     def get_world_transforms(self):
@@ -217,22 +176,12 @@ class Simulator(object):
         cl.enqueue_copy(self.queue, fitness, fitness_buf)
         return fitness
 
-    def set_fitness(self, fitness):
-        kernel = self.prg.set_fitness
-        kernel.set_scalar_arg_dtypes((None, np.float32))
-        kernel(self.queue, self.global_size, self.local_size, self.worlds, fitness).wait()
-
     def get_individual_fitness_energy(self):
         fitene = np.zeros(self.num_worlds * self.num_robots, dtype=np.dtype((np.float32, (2,))))
         fitene_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=fitene)
         self.prg.get_individual_fitness_energy(self.queue, self.global_size, self.local_size, self.worlds, fitene_buf).wait()
         cl.enqueue_copy(self.queue, fitene, fitene_buf)
         return fitene
-
-    def set_energy(self, energy):
-        kernel = self.prg.set_energy
-        kernel.set_scalar_arg_dtypes((None, np.float32))
-        kernel(self.queue, self.global_size, self.local_size, self.worlds, energy).wait()
 
     def get_ann_state(self):
         sensors = np.zeros(self.num_worlds * self.num_robots, dtype=np.uint32)
@@ -250,6 +199,35 @@ class Simulator(object):
         cl.enqueue_copy(self.queue, hidden, hidden_buf)
 
         return sensors, actuators, hidden
+
+    @staticmethod
+    def test_raycast():
+        context = cl.create_some_context()
+        queue = cl.CommandQueue(context)
+
+        options = '-DROBOTS_PER_WORLD=%d -DTIME_STEP=%f -DTA=%f -DTB=%f -DDYNAMICS_ITERATIONS=%d' % (3, 1/10.0, 600, 5400, 4)
+
+        src = open(os.path.join(__dir__, 'kernels/physics.cl'), 'r')
+        prg = cl.Program(context, src.read()).build(options=options)
+
+        # query the structs sizes
+        sizeof = np.zeros(1, dtype=np.int32)
+        sizeof_buf = cl.Buffer(context, 0, 4)
+
+        prg.size_of_world_t(queue, (1,), None, sizeof_buf).wait()
+        cl.enqueue_copy(queue, sizeof, sizeof_buf)
+        sizeof_world_t = int(sizeof[0])
+
+        # create buffers
+        worlds = cl.Buffer(context, 0, sizeof_world_t)
+
+        results = np.zeros(4, dtype=np.int32)
+        results_buf = cl.Buffer(context, cl.mem_flags.COPY_HOST_PTR, hostbuf=results)
+
+        prg.test_raycast(queue, (1,), None, worlds, results_buf).wait()
+        cl.enqueue_copy(queue, results, results_buf)
+
+        print results
 
 class ANNParametersArray(object):
     WEIGHTS_BOUNDARY = (-5.0, 5.0)
