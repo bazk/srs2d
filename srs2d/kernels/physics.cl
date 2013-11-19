@@ -419,20 +419,17 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
         {
             worlds[wid].robots[rid].sensors[IN_ground] = 1.0;
 
-            if (worlds[wid].robots[rid].last_target_area < 0)
+            if (worlds[wid].robots[rid].last_target_area != i)
             {
-                worlds[wid].robots[rid].energy = 2;
                 worlds[wid].robots[rid].last_target_area = i;
-            }
-            else if (worlds[wid].robots[rid].last_target_area != i)
-            {
-                worlds[wid].robots[rid].fitness += worlds[wid].robots[rid].energy;
-                worlds[wid].robots[rid].energy = 2;
-                // worlds[wid].robots[rid].fitness += 1;
-                worlds[wid].robots[rid].last_target_area = i;
+
+                if (worlds[wid].robots[rid].collision == 0)
+                {
+                    worlds[wid].robots[rid].fitness += worlds[wid].robots[rid].energy;
+                    worlds[wid].robots[rid].energy = 2;
+                }
             }
         }
-
 
         // target area led in camera
         if (dist < CAMERA_RADIUS + ROBOT_BODY_RADIUS)
@@ -468,10 +465,13 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
             worlds[wid].robots[rid].sensors[i] = 0;
     }
 
-    worlds[wid].robots[rid].energy -= (fabs(worlds[wid].robots[rid].wheels_angular_speed.s0) + fabs(worlds[wid].robots[rid].wheels_angular_speed.s1)) /
-                                                                        (2 * worlds[wid].k * WHEELS_MAX_ANGULAR_SPEED);
-    if (worlds[wid].robots[rid].energy < 0)
-        worlds[wid].robots[rid].energy = 0;
+    if (worlds[wid].robots[rid].collision == 0)
+    {
+        worlds[wid].robots[rid].energy -= (fabs(worlds[wid].robots[rid].wheels_angular_speed.s0) + fabs(worlds[wid].robots[rid].wheels_angular_speed.s1)) /
+                                                                            (2 * worlds[wid].k * WHEELS_MAX_ANGULAR_SPEED);
+        if (worlds[wid].robots[rid].energy < 0)
+            worlds[wid].robots[rid].energy = 0;
+    }
 }
 
 __kernel void step_collisions(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
