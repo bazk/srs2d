@@ -40,6 +40,11 @@ __kernel void set_random_position(__global ranluxcl_state_t *ranluxcltab, __glob
         worlds[wid].robots[rid].transform.rot.sin = random.s2 * 2 - 1;
         worlds[wid].robots[rid].transform.rot.cos = random.s3 * 2 - 1;
 
+        worlds[wid].robots[rid].previous_transform.pos.x = worlds[wid].robots[rid].transform.pos.x;
+        worlds[wid].robots[rid].previous_transform.pos.y = worlds[wid].robots[rid].transform.pos.y;
+        worlds[wid].robots[rid].previous_transform.rot.sin = worlds[wid].robots[rid].transform.rot.sin;
+        worlds[wid].robots[rid].previous_transform.rot.cos = worlds[wid].robots[rid].transform.rot.cos;
+
         collision = 0;
 
         // check for collision with other robots
@@ -181,6 +186,11 @@ __kernel void init_robots(__global ranluxcl_state_t *ranluxcltab, __global world
         worlds[wid].robots[rid].transform.rot.sin = 1;
         worlds[wid].robots[rid].transform.rot.cos = 0;
     }
+
+    worlds[wid].robots[rid].previous_transform.pos.x = worlds[wid].robots[rid].transform.pos.x;
+    worlds[wid].robots[rid].previous_transform.pos.y = worlds[wid].robots[rid].transform.pos.y;
+    worlds[wid].robots[rid].previous_transform.rot.sin = worlds[wid].robots[rid].transform.rot.sin;
+    worlds[wid].robots[rid].previous_transform.rot.cos = worlds[wid].robots[rid].transform.rot.cos;
 #endif
 }
 
@@ -215,19 +225,10 @@ __kernel void step_actuators(__global ranluxcl_state_t *ranluxcltab, __global wo
     int wid = get_global_id(0);
     int rid = get_global_id(1);
 
-    if (worlds[wid].robots[rid].collision != 0) {
-        set_random_position(ranluxcltab, worlds);
-        worlds[wid].robots[rid].collision = 0;
-        worlds[wid].robots[rid].wheels_angular_speed.s0 = 0;
-        worlds[wid].robots[rid].wheels_angular_speed.s1 = 0;
-        worlds[wid].robots[rid].front_led = 0;
-        worlds[wid].robots[rid].rear_led = 0;
-        worlds[wid].robots[rid].energy = 2;
-        worlds[wid].robots[rid].fitness = 0.0;
-        worlds[wid].robots[rid].last_target_area = -1;
-        worlds[wid].robots[rid].collision_count += 1;
-        return;
-    }
+    worlds[wid].robots[rid].previous_transform.pos.x = worlds[wid].robots[rid].transform.pos.x;
+    worlds[wid].robots[rid].previous_transform.pos.y = worlds[wid].robots[rid].transform.pos.y;
+    worlds[wid].robots[rid].previous_transform.rot.sin = worlds[wid].robots[rid].transform.rot.sin;
+    worlds[wid].robots[rid].previous_transform.rot.cos = worlds[wid].robots[rid].transform.rot.cos;
 
     worlds[wid].robots[rid].front_led = (worlds[wid].robots[rid].actuators[OUT_front_led] > 0.5) ? 1 : 0;
     worlds[wid].robots[rid].rear_led = (worlds[wid].robots[rid].actuators[OUT_rear_led] > 0.5) ? 1 : 0;
@@ -319,11 +320,10 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
 
         float dist = distance(worlds[wid].robots[rid].transform.pos, worlds[wid].robots[otherid].transform.pos);
 
-        // if ((dist < 2*ROBOT_BODY_RADIUS) && (otherid > rid)) {
-        // if (dist < 2*ROBOT_BODY_RADIUS) {
-        //     worlds[wid].robots[rid].collision = 1;
-        //     return;
-        // }
+        if (dist < 2*ROBOT_BODY_RADIUS) {
+            worlds[wid].robots[rid].collision = 1;
+            return;
+        }
 
         // IR against other robots
         if (dist < (2*ROBOT_BODY_RADIUS+IR_ROUND_DIST_MAX))
@@ -472,6 +472,22 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
         worlds[wid].robots[rid].energy = 0;
 }
 
+__kernel void step_collisions(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
+{
+    int wid = get_global_id(0);
+    int rid = get_global_id(1);
+
+    if (worlds[wid].robots[rid].collision != 0) {
+        worlds[wid].robots[rid].collision = 0;
+        worlds[wid].robots[rid].collision_count += 1;
+
+        worlds[wid].robots[rid].transform.pos.x = worlds[wid].robots[rid].previous_transform.pos.x;
+        worlds[wid].robots[rid].transform.pos.y = worlds[wid].robots[rid].previous_transform.pos.y;
+        worlds[wid].robots[rid].transform.rot.sin = worlds[wid].robots[rid].previous_transform.rot.sin;
+        worlds[wid].robots[rid].transform.rot.cos = worlds[wid].robots[rid].previous_transform.rot.cos;
+    }
+}
+
 __kernel void step_controllers(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
 {
     int wid = get_global_id(0);
@@ -530,6 +546,8 @@ __kernel void step_robots(__global ranluxcl_state_t *ranluxcltab, __global world
     barrier(CLK_GLOBAL_MEM_FENCE);
     step_sensors(ranluxcltab, worlds);
     barrier(CLK_GLOBAL_MEM_FENCE);
+    step_collisions(ranluxcltab, worlds);
+    barrier(CLK_GLOBAL_MEM_FENCE);
     step_controllers(ranluxcltab, worlds);
     barrier(CLK_GLOBAL_MEM_FENCE);
 }
@@ -546,6 +564,8 @@ __kernel void simulate(__global ranluxcl_state_t *ranluxcltab, __global world_t 
         step_actuators(ranluxcltab, worlds);
         barrier(CLK_GLOBAL_MEM_FENCE);
         step_sensors(ranluxcltab, worlds);
+        barrier(CLK_GLOBAL_MEM_FENCE);
+        step_collisions(ranluxcltab, worlds);
         barrier(CLK_GLOBAL_MEM_FENCE);
         step_controllers(ranluxcltab, worlds);
         barrier(CLK_GLOBAL_MEM_FENCE);

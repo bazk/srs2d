@@ -144,6 +144,7 @@ class Simulator(object):
     def step(self):
         self.prg.step_actuators(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
         self.prg.step_sensors(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
+        self.prg.step_collisions(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
         self.prg.step_controllers(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
 
         self.step_count += 1

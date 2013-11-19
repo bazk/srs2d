@@ -59,6 +59,7 @@ typedef struct {
 
 typedef struct {
     transform_t transform;
+    transform_t previous_transform;
     float2 wheels_angular_speed;
     int front_led;
     int rear_led;
