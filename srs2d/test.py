@@ -18,9 +18,7 @@
 __author__ = "Eduardo L. Buratti <eburatti09@gmail.com>"
 __date__ = "04 Jul 2013"
 
-import sys
 import argparse
-import ast
 import physics
 import io
 import pyopencl as cl
@@ -107,24 +105,4 @@ if __name__=="__main__":
     parser.add_argument("--tb", type=int, help="number of timesteps with fitness avaliation", default=5400)
     args = parser.parse_args()
 
-    if args.params is None:
-        params = None
-    else:
-        try:
-            params = ast.literal_eval(args.params)
-            if not isinstance(params, dict):
-                raise Exception("Not a dictionary.")
-
-            for n in ["weights", "bias", "weights_hidden", "bias_hidden", "timec_hidden"]:
-                if not n in params:
-                    raise Exception("Missing key: %s." % n)
-
-                if not isinstance(params[n], list):
-                    raise Exception("Key %s is not a list." % n)
-
-        except Exception as e:
-            print "Invalid parameters for the neural network."
-            print e
-            sys.exit(1)
-
-    TestSimulator().run(args.save, params, args.distance, args.num_robots, args.ta, args.tb)
+    TestSimulator().run(args.save, args.params, args.distance, args.num_robots, args.ta, args.tb)
