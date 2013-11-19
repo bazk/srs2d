@@ -99,29 +99,21 @@ __kernel void init_arenas(__global ranluxcl_state_t *ranluxcltab, __global world
     worlds[wid].walls[0].p1.y = -worlds[wid].arena_height / 2;
     worlds[wid].walls[0].p2.x = worlds[wid].arena_width / 2;
     worlds[wid].walls[0].p2.y = worlds[wid].arena_height / 2;
-    worlds[wid].walls[0].rot.sin = 1;
-    worlds[wid].walls[0].rot.cos = 0;
 
     worlds[wid].walls[1].p1.x = -worlds[wid].arena_width / 2;
     worlds[wid].walls[1].p1.y = worlds[wid].arena_height / 2;
     worlds[wid].walls[1].p2.x = worlds[wid].arena_width / 2;
     worlds[wid].walls[1].p2.y = worlds[wid].arena_height / 2;
-    worlds[wid].walls[1].rot.sin = 0;
-    worlds[wid].walls[1].rot.cos = -1;
 
     worlds[wid].walls[2].p1.x = -worlds[wid].arena_width / 2;
     worlds[wid].walls[2].p1.y = -worlds[wid].arena_height / 2;
     worlds[wid].walls[2].p2.x = -worlds[wid].arena_width / 2;
     worlds[wid].walls[2].p2.y = worlds[wid].arena_height / 2;
-    worlds[wid].walls[2].rot.sin = -1;
-    worlds[wid].walls[2].rot.cos = 0;
 
     worlds[wid].walls[3].p1.x = -worlds[wid].arena_width / 2;
     worlds[wid].walls[3].p1.y = -worlds[wid].arena_height / 2;
     worlds[wid].walls[3].p2.x = worlds[wid].arena_width / 2;
     worlds[wid].walls[3].p2.y = -worlds[wid].arena_height / 2;
-    worlds[wid].walls[3].rot.sin = 0;
-    worlds[wid].walls[3].rot.cos = 1;
 }
 
 __kernel void init_worlds(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds, float targets_distance)
@@ -181,7 +173,7 @@ __kernel void init_robots(__global ranluxcl_state_t *ranluxcltab, __global world
         worlds[wid].robots[rid].transform.rot.cos = 1;
     }
     else if (rid == 1) {
-        worlds[wid].robots[rid].transform.pos.x = 0.15;
+        worlds[wid].robots[rid].transform.pos.x = 0.073;
         worlds[wid].robots[rid].transform.pos.y = 0;
         worlds[wid].robots[rid].transform.rot.sin = 1;
         worlds[wid].robots[rid].transform.rot.cos = 0;
@@ -299,7 +291,19 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
                 else
                     dist_idx = (int) floor((dist - IR_WALL_DIST_MIN) / IR_WALL_DIST_INTERVAL);
 
-                float diff_angle = angle_rot(worlds[wid].robots[rid].transform.rot) - angle_rot(worlds[wid].walls[i].rot);
+                float wall_angle;
+                if (proj.x == pos.x)
+                    if (proj.y < pos.y)
+                        wall_angle = 3 * M_PI / 2;
+                    else
+                        wall_angle = M_PI / 2;
+                else
+                    if (proj.x < pos.x)
+                        wall_angle = M_PI;
+                    else
+                        wall_angle = 0;
+
+                float diff_angle = angle_rot(worlds[wid].robots[rid].transform.rot) - wall_angle;
 
                 if (diff_angle >= (2*M_PI))
                     diff_angle -= 2*M_PI;
@@ -331,21 +335,21 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
             float d = dist - 2*ROBOT_BODY_RADIUS;
 
             int dist_idx;
-            if (d <= IR_WALL_DIST_MIN)
+            if (d <= IR_ROUND_DIST_MIN)
                 dist_idx = 0;
             else
-                dist_idx = (int) floor((d - IR_WALL_DIST_MIN) / IR_WALL_DIST_INTERVAL);
+                dist_idx = (int) floor((d - IR_ROUND_DIST_MIN) / IR_ROUND_DIST_INTERVAL);
 
             float s = worlds[wid].robots[otherid].transform.pos.y - worlds[wid].robots[rid].transform.pos.y;
             float c = worlds[wid].robots[otherid].transform.pos.x - worlds[wid].robots[rid].transform.pos.x;
-            float diff_angle = angle_rot(worlds[wid].robots[rid].transform.rot) - angle(s, c) - (M_PI / 2.0f);
+            float diff_angle = angle_rot(worlds[wid].robots[rid].transform.rot) - angle(s, c);
 
             if (diff_angle >= (2*M_PI))
                 diff_angle -= 2*M_PI;
             else if (diff_angle < 0)
                 diff_angle += 2*M_PI;
 
-            int angle_idx = (int) floor(diff_angle / (2*M_PI / IR_ROUND_ANGLE_COUNT));
+            int angle_idx = (int) floor(diff_angle / ((2*M_PI) / IR_ROUND_ANGLE_COUNT));
 
             for (j = 0; j < 8; j++)
                 worlds[wid].robots[rid].sensors[j] += IR_ROUND_SAMPLES[dist_idx][angle_idx][j] / 1024.0f;
@@ -528,11 +532,11 @@ __kernel void step_controllers(__global ranluxcl_state_t *ranluxcltab, __global 
 
 #ifdef TEST
     if (rid == 0) {
-        worlds[wid].robots[rid].actuators[OUT_wheels0] = 0.5;
-        worlds[wid].robots[rid].actuators[OUT_wheels1] = 0.5;
+        worlds[wid].robots[rid].actuators[OUT_wheels0] = 0.4;
+        worlds[wid].robots[rid].actuators[OUT_wheels1] = 0.6;
     }
     else if (rid == 1) {
-        worlds[wid].robots[rid].actuators[OUT_wheels0] = 0.8;
+        worlds[wid].robots[rid].actuators[OUT_wheels0] = 0.72;
         worlds[wid].robots[rid].actuators[OUT_wheels1] = 0.9;
     }
     else {
@@ -623,7 +627,7 @@ __kernel void get_fitness(__global world_t *worlds, __global float *fitness)
     int wid = get_global_id(0);
     int rid;
 
-    int max_trips = floor( ((2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS) * TB * TIME_STEP) / worlds[wid].targets_distance );
+    int max_trips = (int) floor( ((2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS) * TB * TIME_STEP) / worlds[wid].targets_distance );
 
     float avg_fitness = 0;
 

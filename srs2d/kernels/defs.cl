@@ -54,7 +54,6 @@ typedef struct {
 typedef struct {
     float2 p1;
     float2 p2;
-    rotation_t rot;
 } wall_t;
 
 typedef struct {
