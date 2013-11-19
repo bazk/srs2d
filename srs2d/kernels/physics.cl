@@ -320,10 +320,10 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
         float dist = distance(worlds[wid].robots[rid].transform.pos, worlds[wid].robots[otherid].transform.pos);
 
         // if ((dist < 2*ROBOT_BODY_RADIUS) && (otherid > rid)) {
-        if (dist < 2*ROBOT_BODY_RADIUS) {
-            worlds[wid].robots[rid].collision = 1;
-            return;
-        }
+        // if (dist < 2*ROBOT_BODY_RADIUS) {
+        //     worlds[wid].robots[rid].collision = 1;
+        //     return;
+        // }
 
         // IR against other robots
         if (dist < (2*ROBOT_BODY_RADIUS+IR_ROUND_DIST_MAX))
