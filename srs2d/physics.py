@@ -63,10 +63,10 @@ class Simulator(object):
 
         self.prg.size_of_world_t(queue, (1,), None, sizeof_buf).wait()
         cl.enqueue_copy(queue, sizeof, sizeof_buf)
-        sizeof_world_t = int(sizeof[0])
+        self.sizeof_world_t = int(sizeof[0])
 
         # estimate how many work items can be executed in parallel in each work group
-        self.work_group_size = pyopencl.characterize.get_simd_group_size(self.queue.device, sizeof_world_t)
+        self.work_group_size = pyopencl.characterize.get_simd_group_size(self.queue.device, self.sizeof_world_t)
         self.global_size = (num_worlds, num_robots)
         if self.work_group_size >= num_robots:
             self.local_size = (self.work_group_size / num_robots, num_robots)
@@ -76,7 +76,7 @@ class Simulator(object):
             self.need_global_barrier = True
 
         # create buffers
-        self.worlds = cl.Buffer(context, 0, num_worlds * sizeof_world_t)
+        self.worlds = cl.Buffer(context, 0, num_worlds * self.sizeof_world_t)
 
         # initialize random number generator
         self.ranluxcl = cl.Buffer(context, 0, num_worlds * num_robots * 112)
