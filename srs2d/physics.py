@@ -142,14 +142,9 @@ class Simulator(object):
         self.prg.init_robots(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
 
     def step(self):
-        if not self.need_global_barrier:
-            self.prg.step_robots(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
-
-        else:
-            self.prg.step_actuators(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds)
-            self.prg.step_dynamics(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
-            self.prg.step_sensors(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds)
-            self.prg.step_controllers(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
+        self.prg.step_actuators(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
+        self.prg.step_sensors(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
+        self.prg.step_controllers(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
 
         self.step_count += 1
         self.clock += self.time_step
