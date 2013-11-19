@@ -272,7 +272,6 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
              ((pos.y-ROBOT_BODY_RADIUS) < (-worlds[wid].arena_height/2)) )
         {
             worlds[wid].robots[rid].collision = 1;
-            return;
         }
 
         // IR against 4 walls
@@ -293,10 +292,12 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
             float dist = distance(proj, pos) - ROBOT_BODY_RADIUS;
 
             if (dist <= IR_WALL_DIST_MAX) {
-                if (dist < IR_WALL_DIST_MIN)
-                    dist = IR_WALL_DIST_MIN;
+                int dist_idx;
 
-                int dist_idx = (int) floor((dist - IR_WALL_DIST_MIN) / IR_WALL_DIST_INTERVAL);
+                if (dist <= IR_WALL_DIST_MIN)
+                    dist_idx = 0;
+                else
+                    dist_idx = (int) floor((dist - IR_WALL_DIST_MIN) / IR_WALL_DIST_INTERVAL);
 
                 float diff_angle = angle_rot(worlds[wid].robots[rid].transform.rot) - angle_rot(worlds[wid].walls[i].rot);
 
@@ -322,17 +323,18 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
 
         if (dist < 2*ROBOT_BODY_RADIUS) {
             worlds[wid].robots[rid].collision = 1;
-            return;
         }
 
         // IR against other robots
         if (dist < (2*ROBOT_BODY_RADIUS+IR_ROUND_DIST_MAX))
         {
             float d = dist - 2*ROBOT_BODY_RADIUS;
-            if (d < IR_ROUND_DIST_MIN)
-                d = IR_ROUND_DIST_MIN;
 
-            int dist_idx = (int) floor((d - IR_ROUND_DIST_MIN) / IR_ROUND_DIST_INTERVAL);
+            int dist_idx;
+            if (d <= IR_WALL_DIST_MIN)
+                dist_idx = 0;
+            else
+                dist_idx = (int) floor((d - IR_WALL_DIST_MIN) / IR_WALL_DIST_INTERVAL);
 
             float s = worlds[wid].robots[otherid].transform.pos.y - worlds[wid].robots[rid].transform.pos.y;
             float c = worlds[wid].robots[otherid].transform.pos.x - worlds[wid].robots[rid].transform.pos.x;
