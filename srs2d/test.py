@@ -28,7 +28,7 @@ class TestSimulator(object):
         context = cl.create_some_context()
         queue = cl.CommandQueue(context)
 
-        num_worlds = 20
+        num_worlds = 2
 
         simulator = physics.Simulator(context, queue, num_worlds=num_worlds, num_robots=num_robots, ta=ta, tb=tb, test=True)
 
