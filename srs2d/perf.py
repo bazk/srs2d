@@ -39,16 +39,11 @@ class TestPerfSimulator(object):
         else:
             pos = physics.ANNParametersArray()
 
-        simulator.init_worlds(d)
-        simulator.set_ann_parameters([ pos.encoded for i in xrange(num_worlds) ])
-
         times = []
 
         for i in xrange(num_trials):
-            simulator.init_worlds(d)
-
             start = time.time()
-            simulator.simulate()
+            simulator.simulate(d, [ pos.encoded for i in xrange(num_worlds) ])
             end = time.time()
 
             times.append(end - start)

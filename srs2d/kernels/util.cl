@@ -36,4 +36,9 @@ float sigmoid(float z)
     return 1 / (1 + exp(-z));
 }
 
+float decode_param(unsigned char p, float boundary_l, float boundary_h)
+{
+    return (float) (p * (boundary_h - boundary_l) / 255) + boundary_l;
+}
+
 #endif

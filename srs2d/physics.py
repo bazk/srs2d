@@ -27,6 +27,7 @@ import numpy as np
 import pyopencl as cl
 import pyopencl.characterize
 import logging.config
+import io
 
 __log__ = logging.getLogger(__name__)
 
@@ -108,7 +109,7 @@ class Simulator(object):
 
         # create and initialize worlds
         self.worlds = cl.Buffer(context, 0, num_worlds * self.sizeof_world_t)
-        self.init_worlds(0.7)
+        # self.init_worlds(0.7)
 
     def __query_sizeof_world_t(self, context, queue, num_robots):
         src = '''
@@ -129,92 +130,150 @@ class Simulator(object):
         cl.enqueue_copy(queue, sizeof, sizeof_buf).wait()
         return int(sizeof[0])
 
-    def init_worlds(self, target_areas_distance):
-        init_worlds = self.prg.init_worlds
-        init_worlds.set_scalar_arg_dtypes((None, None, np.float32))
-        init_worlds(self.queue, (self.num_worlds,), None, self.ranluxcl, self.worlds, target_areas_distance).wait()
-
-    def step(self, current_step):
-        step_robots = self.prg.step_robots
-        step_robots.set_scalar_arg_dtypes((None, None, np.uint32))
-        step_robots(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds, current_step).wait()
-
-    def simulate(self):
-        self.prg.simulate(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
-
-    def set_ann_parameters(self, parameters):
-        if len(parameters) != self.num_worlds:
+    def simulate(self, targets_distance, param_list, save_hist=False):
+        if len(param_list) != self.num_worlds:
             raise Exception('Number of parameters is not equal to the number of worlds!')
 
-        param = np.chararray(len(parameters), len(parameters[0]))
-        param[:] = parameters
-
+        param = np.chararray(len(param_list), len(param_list[0]))
+        param[:] = param_list
         param_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=param)
 
-        set_ann_parameters = self.prg.set_ann_parameters
-        set_ann_parameters.set_scalar_arg_dtypes((None, None, np.uint32))
-        set_ann_parameters(self.queue, (self.num_worlds,), None, self.worlds, param_buf, len(parameters[0])).wait()
+        fitness_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(4 * self.num_worlds))
 
-    def get_world_transforms(self):
-        arena = np.zeros(self.num_worlds, dtype=np.dtype((np.float32, (2,))))
-        target_areas = np.zeros(self.num_worlds, dtype=np.dtype((np.float32, (4,))))
-        target_areas_radius = np.zeros(self.num_worlds, dtype=np.dtype((np.float32, (2,))))
+        if save_hist:
+            robot_radius_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(4 * self.num_worlds))
+            arena_size_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(8 * self.num_worlds))
+            target_areas_pos_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(16 * self.num_worlds))
+            target_areas_radius_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(8 * self.num_worlds))
 
-        arena_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=arena)
-        target_areas_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=target_areas)
-        target_areas_radius_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=target_areas_radius)
+            fitness_hist_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(4 * (self.ta+self.tb) * self.num_worlds * self.num_robots))
+            energy_hist_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(4 * (self.ta+self.tb) * self.num_worlds * self.num_robots))
+            transform_hist_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(16 * (self.ta+self.tb) * self.num_worlds * self.num_robots))
+            sensors_hist_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(4 * (self.ta+self.tb) * self.num_worlds * self.num_robots * NUM_SENSORS))
+            actuators_hist_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(4 * (self.ta+self.tb) * self.num_worlds * self.num_robots * NUM_ACTUATORS))
+            hidden_hist_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(4 * (self.ta+self.tb) * self.num_worlds * self.num_robots * NUM_HIDDEN))
+        else:
+            robot_radius_buf = None
+            arena_size_buf = None
+            target_areas_pos_buf = None
+            target_areas_radius_buf = None
 
-        self.prg.get_world_transforms(self.queue, (self.num_worlds,), None, self.worlds, arena_buf, target_areas_buf, target_areas_radius_buf).wait()
+            fitness_hist_buf = None
+            energy_hist_buf = None
+            transform_hist_buf = None
+            sensors_hist_buf = None
+            actuators_hist_buf = None
+            hidden_hist_buf = None
 
-        cl.enqueue_copy(self.queue, arena, arena_buf)
-        cl.enqueue_copy(self.queue, target_areas, target_areas_buf)
-        cl.enqueue_copy(self.queue, target_areas_radius, target_areas_radius_buf)
-        return (arena, target_areas, target_areas_radius)
+        simulate = self.prg.simulate
+        simulate.set_scalar_arg_dtypes((None, None, np.float32,
+                                        None, np.uint32,
+                                        None,
+                                        None, None,
+                                        None, None,
+                                        None, None, None,
+                                        None, None, None,
+                                        np.uint32))
+        simulate(self.queue, self.global_size, self.local_size,
+                 self.ranluxcl, self.worlds, targets_distance,
+                 param_buf, len(param_list[0]),
+                 fitness_buf,
+                 robot_radius_buf, arena_size_buf,
+                 target_areas_pos_buf, target_areas_radius_buf,
+                 fitness_hist_buf, energy_hist_buf, transform_hist_buf,
+                 sensors_hist_buf, actuators_hist_buf, hidden_hist_buf,
+                 1 if save_hist else 0).wait()
 
-    def get_transforms(self):
-        transforms = np.zeros(self.num_worlds * self.num_robots, dtype=np.dtype((np.float32, (4,))))
-        radius = np.zeros(self.num_worlds * self.num_robots, dtype=np.dtype((np.float32, (1,))))
-
-        trans_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=transforms)
-        radius_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=radius)
-
-        self.prg.get_transform_matrices(self.queue, self.global_size, self.local_size, self.worlds, trans_buf, radius_buf).wait()
-
-        cl.enqueue_copy(self.queue, transforms, trans_buf)
-        cl.enqueue_copy(self.queue, radius, radius_buf)
-
-        return transforms, radius
-
-    def get_fitness(self):
         fitness = np.zeros(self.num_worlds, dtype=np.float32)
-        fitness_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=fitness)
-        self.prg.get_fitness(self.queue, (self.num_worlds,), None, self.worlds, fitness_buf).wait()
         cl.enqueue_copy(self.queue, fitness, fitness_buf)
+
+        if save_hist:
+            robot_radius = np.zeros((self.num_worlds), dtype=np.float32)
+            arena_size= np.zeros((self.num_worlds, 2), dtype=np.float32)
+            target_areas_pos = np.zeros((self.num_worlds, 2, 2), dtype=np.float32)
+            target_areas_radius = np.zeros((self.num_worlds, 2), dtype=np.float32)
+
+            fitness_hist = np.zeros((self.ta+self.tb, self.num_worlds, self.num_robots), dtype=np.float32)
+            energy_hist = np.zeros((self.ta+self.tb, self.num_worlds, self.num_robots), dtype=np.float32)
+            transform_hist = np.zeros((self.ta+self.tb, self.num_worlds, self.num_robots, 4), dtype=np.float32)
+            sensors_hist = np.zeros((self.ta+self.tb, self.num_worlds, self.num_robots, NUM_SENSORS), dtype=np.float32)
+            actuators_hist = np.zeros((self.ta+self.tb, self.num_worlds, self.num_robots, NUM_ACTUATORS), dtype=np.float32)
+            hidden_hist = np.zeros((self.ta+self.tb, self.num_worlds, self.num_robots, NUM_HIDDEN), dtype=np.float32)
+
+            cl.enqueue_copy(self.queue, robot_radius, robot_radius_buf)
+            cl.enqueue_copy(self.queue, arena_size, arena_size_buf)
+            cl.enqueue_copy(self.queue, target_areas_pos, target_areas_pos_buf)
+            cl.enqueue_copy(self.queue, target_areas_radius, target_areas_radius_buf)
+
+            cl.enqueue_copy(self.queue, fitness_hist, fitness_hist_buf)
+            cl.enqueue_copy(self.queue, energy_hist, energy_hist_buf)
+            cl.enqueue_copy(self.queue, transform_hist, transform_hist_buf)
+            cl.enqueue_copy(self.queue, sensors_hist, sensors_hist_buf)
+            cl.enqueue_copy(self.queue, actuators_hist, actuators_hist_buf)
+            cl.enqueue_copy(self.queue, hidden_hist, hidden_hist_buf)
+
+            return fitness, (
+                robot_radius, arena_size, target_areas_pos, target_areas_radius,
+                fitness_hist, energy_hist, transform_hist,
+                sensors_hist, actuators_hist, hidden_hist
+            )
+
+        else:
+            return fitness
+
+    def simulate_and_save(self, targets_distance, param_list, filename):
+        fitness, hist = self.simulate(targets_distance, param_list, save_hist=True)
+
+        ( robot_radius, arena_size, target_areas_pos, target_areas_radius,
+          fitness_hist, energy_hist, transform_hist,
+          sensors_hist, actuators_hist, hidden_hist ) = hist
+
+        save_file = io.SaveFile.new(filename, step_rate=1/float(self.time_step))
+
+        world = 0
+
+        save_file.add_object('arena', io.SHAPE_RECTANGLE, x=0.0, y=0.0, width=arena_size[world][0], height=arena_size[world][1])
+        save_file.add_object('target0', io.SHAPE_CIRCLE, x=target_areas_pos[world][0][0], y=target_areas_pos[world][0][1],
+            radius=target_areas_radius[world][0], sin=0.0, cos=1.0)
+        save_file.add_object('target1', io.SHAPE_CIRCLE, x=target_areas_pos[world][1][0], y=target_areas_pos[world][1][1],
+            radius=target_areas_radius[world][1], sin=0.0, cos=1.0)
+
+        robot_obj = [ None for rid in xrange(self.num_robots) ]
+        for rid in xrange(self.num_robots):
+            robot_obj[rid] = save_file.add_object('robot'+str(rid), io.SHAPE_CIRCLE,
+                x=transform_hist[0][world][rid][0], y=transform_hist[0][world][rid][1], radius=robot_radius[world],
+                sin=transform_hist[0][world][rid][2], cos=transform_hist[0][world][rid][3],
+                fitness=fitness_hist[0][world][rid], energy=energy_hist[0][world][rid],
+                actuators0=actuators_hist[0][world][rid][0],
+                actuators1=actuators_hist[0][world][rid][1],
+                actuators2=actuators_hist[0][world][rid][2],
+                actuators3=actuators_hist[0][world][rid][3],
+                hidden0=hidden_hist[0][world][rid][0],
+                hidden1=hidden_hist[0][world][rid][1],
+                hidden2=hidden_hist[0][world][rid][2])
+
+        cur = 0
+        while (cur < (self.ta+self.tb)):
+            for rid in xrange(self.num_robots):
+                robot_obj[rid].update(
+                    x=transform_hist[cur][world][rid][0], y=transform_hist[cur][world][rid][1],
+                    sin=transform_hist[cur][world][rid][2], cos=transform_hist[cur][world][rid][3],
+                    fitness=fitness_hist[cur][world][rid], energy=energy_hist[cur][world][rid],
+                    actuators0=actuators_hist[cur][world][rid][0],
+                    actuators1=actuators_hist[cur][world][rid][1],
+                    actuators2=actuators_hist[cur][world][rid][2],
+                    actuators3=actuators_hist[cur][world][rid][3],
+                    hidden0=hidden_hist[cur][world][rid][0],
+                    hidden1=hidden_hist[cur][world][rid][1],
+                    hidden2=hidden_hist[cur][world][rid][2])
+
+            save_file.frame()
+
+            cur += 1
+
+        save_file.close()
+
         return fitness
-
-    def get_individual_fitness_energy(self):
-        fitene = np.zeros(self.num_worlds * self.num_robots, dtype=np.dtype((np.float32, (2,))))
-        fitene_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=fitene)
-        self.prg.get_individual_fitness_energy(self.queue, self.global_size, self.local_size, self.worlds, fitene_buf).wait()
-        cl.enqueue_copy(self.queue, fitene, fitene_buf)
-        return fitene
-
-    def get_ann_state(self):
-        sensors = np.zeros(self.num_worlds * self.num_robots, dtype=np.uint32)
-        actuators = np.zeros(self.num_worlds * self.num_robots, dtype=np.dtype((np.float32, (4,))))
-        hidden = np.zeros(self.num_worlds * self.num_robots, dtype=np.dtype((np.float32, (4,))))
-
-        sensors_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=sensors)
-        actuators_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=actuators)
-        hidden_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=hidden)
-
-        self.prg.get_ann_state(self.queue, self.global_size, self.local_size, self.worlds, sensors_buf, actuators_buf, hidden_buf).wait()
-
-        cl.enqueue_copy(self.queue, sensors, sensors_buf)
-        cl.enqueue_copy(self.queue, actuators, actuators_buf)
-        cl.enqueue_copy(self.queue, hidden, hidden_buf)
-
-        return sensors, actuators, hidden
 
 class ANNParametersArray(object):
     WEIGHTS_BOUNDARY = (-5.0, 5.0)
