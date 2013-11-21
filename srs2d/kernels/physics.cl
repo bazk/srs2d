@@ -3,7 +3,7 @@
 
 #pragma OPENCL EXTENSION cl_amd_printf : enable
 
-#ifdef WORK_ITEMS_ARE_WORLDS
+#if defined(WORK_ITEMS_ARE_WORLDS) || defined(NO_LOCAL)
     #define WORLD_MEM_SPACE __global
     #define WORLD_ID_GETTER get_global_id
     #define WORLD_BARRIER CLK_GLOBAL_MEM_FENCE
@@ -370,7 +370,7 @@ __kernel void get_individual_fitness_energy(__global world_t *worlds, __global f
 
 __kernel void simulate(__global ranluxcl_state_t *ranluxcltab, __global world_t *worlds)
 {
-#ifdef WORK_ITEMS_ARE_WORLDS
+#if defined(WORK_ITEMS_ARE_WORLDS) || defined(NO_LOCAL)
     unsigned int cur = 0;
     while (cur < (TA + TB))
         step_robots(ranluxcltab, worlds, cur++);

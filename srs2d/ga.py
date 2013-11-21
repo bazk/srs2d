@@ -30,6 +30,7 @@ import io
 import png
 import subprocess
 import hashlib
+import tempfile
 
 logging.basicConfig(format='[ %(asctime)s ] [%(levelname)s] %(message)s')
 __log__ = logging.getLogger(__name__)
@@ -138,13 +139,14 @@ class GA(object):
 
                 if not args.no_save:
                     __log__.info('[gen=%d] Saving simulation for the new found best...', generation)
-                    fit = self.simulate_and_save('/tmp/simulation.srs',
+                    _, filename = tempfile.mkstemp(prefix='sim_', suffix='.srs')
+                    fit = self.simulate_and_save(filename,
                             best.genome,
                             args.ta, args.tb,
                             args.num_robots,
                             args.distances[ random.randint(0, len(args.distances)-1) ])
-                    run.upload('/tmp/simulation.srs', 'run-%02d-new-best-gen-%04d-fit-%.2f.srs' % (run.id, generation, fit) )
-                    os.remove('/tmp/simulation.srs')
+                    run.upload(filename, 'run-%02d-new-best-gen-%04d-fit-%.2f.srs' % (run.id, generation, fit) )
+                    os.remove(filename)
             else:
                 run.progress(generation / float(args.num_generations), {
                     'generation': generation,
@@ -231,13 +233,13 @@ class GA(object):
         simulator = physics.Simulator(self.context, self.queue,
                                       num_worlds=1,
                                       num_robots=num_robots,
-                                      ta=ta, tb=tb)
+                                      ta=ta, tb=tb,
+                                      no_local=True)
 
         save = io.SaveFile.new(filename, step_rate=1/float(simulator.time_step))
 
-        self.simulator.set_ann_parameters([ pos.encoded ])
-        simulator.commit_ann_parameters()
         simulator.init_worlds(distance)
+        simulator.set_ann_parameters([ pos.encoded ])
 
         arena, target_areas, target_areas_radius = simulator.get_world_transforms()
         save.add_object('arena', io.SHAPE_RECTANGLE, x=0.0, y=0.0, width=arena[0][0], height=arena[0][1])

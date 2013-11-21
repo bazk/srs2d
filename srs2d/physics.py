@@ -37,7 +37,7 @@ NUM_HIDDEN = 3
 __dir__ = os.path.dirname(__file__)
 
 class Simulator(object):
-    def __init__(self, context, queue, num_worlds=1, num_robots=9, ta=600, tb=5400, time_step=1/10.0, test=False):
+    def __init__(self, context, queue, num_worlds=1, num_robots=9, ta=600, tb=5400, time_step=1/10.0, no_local=False, test=False):
         global NUM_INPUTS, NUM_OUTPUTS
 
         self.context = context
@@ -87,6 +87,9 @@ class Simulator(object):
 
         if (test):
             options.append('-DTEST')
+
+        if (no_local):
+            options.append('-DNO_LOCAL')
 
         if (self.work_items_are_worlds):
             options.append('-DWORK_ITEMS_ARE_WORLDS')
