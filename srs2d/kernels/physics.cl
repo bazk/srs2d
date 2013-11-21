@@ -358,7 +358,7 @@ __kernel void step_sensors(__global ranluxcl_state_t *ranluxcltab, __global worl
         }
 
         // other robots in camera
-        if (dist < CAMERA_RADIUS + ROBOT_BODY_RADIUS + LED_PROTUBERANCE)
+        if (dist < (CAMERA_RADIUS + ROBOT_BODY_RADIUS + LED_PROTUBERANCE))
         {
             float2 front = {(ROBOT_BODY_RADIUS + LED_PROTUBERANCE), 0};
             float2 rear = {-(ROBOT_BODY_RADIUS + LED_PROTUBERANCE), 0};
