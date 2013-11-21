@@ -29,6 +29,7 @@ import solace
 import io
 import png
 import subprocess
+import hashlib
 
 logging.basicConfig(format='[ %(asctime)s ] [%(levelname)s] %(message)s')
 __log__ = logging.getLogger(__name__)
@@ -112,73 +113,22 @@ class GA(object):
                                            num_robots=args.num_robots,
                                            ta=args.ta, tb=args.tb)
 
-        last_best_fitness = 0
-
-        __log__.info('Calculating initial fitness...')
-        self.evaluate(self.population, args.distances, args.trials, args.ta, args.tb)
-        self.population = sorted(self.population, key=lambda ind: ind.fitness)
+        last_best_fitness = None
 
         generation = 1
         while (generation <= args.num_generations):
-            new_pop = []
-            elite = self.population[-args.elite_size:]
-
-            size = len(self.population)
-            if (size % 2) != 0:
-                size -= 1
-
-            # (count, scaled_pop) = self.scale(self.population)
-
-            # for i in xrange(0, size, 2):
-            #     genomeMom = self.select(scaled_pop, count).copy()
-            #     genomeDad = self.select(scaled_pop, count).copy()
-
-            #     if (args.pcrossover >= 1) or (random.random() < args.pcrossover):
-            #         (sister, brother) = genomeMom.crossover(genomeDad)
-            #     else:
-            #         (sister, brother) = (genomeMom, genomeDad)
-
-            #     sister.mutate(args.pmutation)
-            #     brother.mutate(args.pmutation)
-
-            #     new_pop.append(sister)
-            #     new_pop.append(brother)
-
-            for i in xrange(size / 6):
-                for j in xrange(6):
-                    individual = self.select(self.population).copy()
-                    individual.mutate(args.pmutation)
-                    new_pop.append(individual)
-
-            if len(self.population) % 2 != 0:
-                individual = self.select(self.population).copy()
-                individual.mutate(args.pmutation)
-                new_pop.append(individual)
-
             __log__.info('[gen=%d] Evaluating population...', generation)
-            self.evaluate(new_pop, args.distances, args.trials, args.ta, args.tb)
-            new_pop = sorted(new_pop, key=lambda ind: ind.fitness)
 
-            for i in xrange(args.elite_size):
-                if elite[i].fitness > new_pop[i - args.elite_size].fitness:
-                    new_pop[i - args.elite_size] = elite[i]
+            (avg_fitness, best) = self.evaluate(args.distances, args.trials, args.ta, args.tb)
 
-            self.population = sorted(new_pop, key=lambda ind: ind.fitness)
+            for e in self.population:
+                __log__.debug('%s  (%.10f)', hashlib.sha1(str(e.genome)).hexdigest(), e.fitness)
 
-            avg_fitness = 0
-            for ind in self.population:
-                avg_fitness += ind.fitness
-            avg_fitness /= len(self.population)
+            __log__.info('[gen=%d] Population evaluated, avg_fitness = %.5f, best fitness = %.5f', generation, avg_fitness, best.fitness)
 
-            best = self.population[-1]
-            new_best = False
-            if (best.fitness > last_best_fitness):
-                new_best = True
+            if (last_best_fitness is None) or (best.fitness > last_best_fitness):
                 last_best_fitness = best.fitness
 
-            __log__.info('[gen=%d] Population evaluated, current best individual: %s', generation, str(best))
-
-            if new_best:
                 run.progress(generation / float(args.num_generations), {
                     'generation': generation,
                     'avg_fitness': avg_fitness,
@@ -208,50 +158,77 @@ class GA(object):
                 run.upload('/tmp/image.png', 'image-run-%02d-gen-%04d.png' % (run.id, generation))
                 os.remove('/tmp/image.png')
 
+            # Generate new pop
+            elite = []
+            for i in self.population[-args.elite_size:]:
+                elite.append(i.copy())
+
+            new_pop = []
+
+            remaining = 0
+            if (len(self.population) % 6) != 0:
+                remaining = len(self.population) % 6
+
+            for i in xrange(len(self.population) / 6):
+                father = self.select()
+
+                for j in xrange(6):
+                    individual = father.copy()
+                    individual.mutate(args.pmutation)
+                    new_pop.append(individual)
+
+            if remaining > 0:
+                father = self.select()
+
+                for i in xrange(remaining):
+                    individual = father.copy()
+                    individual.mutate(args.pmutation)
+                    new_pop.append(individual)
+
+            random.shuffle(new_pop)
+            for i in xrange(args.elite_size):
+                new_pop[i] = elite[i]
+
+            self.population = new_pop
+
             generation += 1
 
         run.done({'generation': generation, 'avg_fitness': avg_fitness, 'best_fitness': best.fitness, 'best_genome': str(best.genome)})
 
-    # def scale(self, population):
-    #     ret = []
-    #     count = 0
-    #     i = 1
-    #     for p in population:
-    #         ret.append((i, p))
-    #         count += i
-    #         i += 1
-    #     return (count, ret)
+    def select(self):
+        return self.population.pop()
 
-    # def select(self, scaled_pop, count):
-    #     target = random.randint(1, count)
-    #     c = 0
-    #     for t, p in scaled_pop:
-    #         c += t
-    #         if c >= target:
-    #             return p
-    def select(self, population):
-        return population.pop()
-
-    def evaluate(self, population, distances, trials, ta, tb):
-        for i in xrange(len(population)):
-            params = population[i].genome
+    def evaluate(self, distances, trials, ta, tb):
+        for i in xrange(len(self.population)):
+            params = self.population[i].genome
             self.simulator.set_ann_parameters(i, params)
         self.simulator.commit_ann_parameters()
 
-        for i in xrange(len(population)):
-            population[i].fitness = .0
+        for i in xrange(len(self.population)):
+            self.population[i].fitness = 0
 
         for d in distances:
-            for i in range(trials):
+            for t in range(trials):
                 self.simulator.init_worlds(d)
                 self.simulator.simulate()
 
                 fit = self.simulator.get_fitness()
-                for i in xrange(len(population)):
-                    population[i].fitness += fit[i]
+                for i in xrange(len(self.population)):
+                    self.population[i].fitness += fit[i]
 
-        for i in xrange(len(population)):
-            population[i].fitness /= len(distances) * trials
+        for i in xrange(len(self.population)):
+            self.population[i].fitness /= len(distances) * trials
+
+        self.population = sorted(self.population, key=lambda ind: ind.fitness)
+
+        avg_fitness = 0
+        for ind in self.population:
+            avg_fitness += ind.fitness
+        avg_fitness /= len(self.population)
+
+        best = self.population[-1]
+
+        return (avg_fitness, best)
 
     def simulate_and_save(self, filename, pos, ta, tb, num_robots, distance):
         simulator = physics.Simulator(self.context, self.queue,
