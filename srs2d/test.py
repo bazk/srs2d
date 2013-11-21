@@ -37,9 +37,8 @@ class TestSimulator(object):
         else:
             pos = physics.ANNParametersArray()
 
-        simulator.set_ann_parameters(0, pos)
-        simulator.commit_ann_parameters()
         simulator.init_worlds(d)
+        simulator.set_ann_parameters([ pos.encoded, pos.encoded ])
 
         if save is None:
             simulator.simulate()

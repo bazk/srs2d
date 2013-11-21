@@ -199,10 +199,7 @@ class GA(object):
         return self.population.pop()
 
     def evaluate(self, distances, trials, ta, tb):
-        for i in xrange(len(self.population)):
-            params = self.population[i].genome
-            self.simulator.set_ann_parameters(i, params)
-        self.simulator.commit_ann_parameters()
+        self.simulator.set_ann_parameters([ ind.genome.encoded for ind in self.population ])
 
         for i in xrange(len(self.population)):
             self.population[i].fitness = 0
@@ -238,7 +235,7 @@ class GA(object):
 
         save = io.SaveFile.new(filename, step_rate=1/float(simulator.time_step))
 
-        simulator.set_ann_parameters(0, pos)
+        self.simulator.set_ann_parameters([ pos.encoded ])
         simulator.commit_ann_parameters()
         simulator.init_worlds(distance)
 
@@ -328,10 +325,10 @@ class Individual(object):
     def crossover(self, other):
        """ Single Point crossover """
 
-       if len(self.genome) <= 1:
-          raise Exception('Cannot crossover genome of length 1 or less.')
+       if len(self.genome) <= 0:
+          raise Exception('Invalid genome (lenght <= 0)')
 
-       point = random.randint(1, len(self.genome)-1)
+       point = random.randint(1, len(self.genome)*8-1)
 
        sister = self.copy()
        sister.genome.merge(point, other.genome)
@@ -342,7 +339,7 @@ class Individual(object):
        return (sister, brother)
 
     def mutate(self, pmutation):
-        for i in xrange(len(self.genome)):
+        for i in xrange(len(self.genome) * 8):
             if random.random() < pmutation:
                 self.genome.flip(i)
 

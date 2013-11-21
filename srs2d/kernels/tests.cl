@@ -1,46 +1,7 @@
-#ifndef __RAYCAST_CL__
-#define __RAYCAST_CL__
+#ifndef __TESTS_CL__
+#define __TESTS_CL__
 
-bool raycast(__global world_t *worlds, float2 p1, float2 p2)
-{
-    int wid = get_global_id(0);
-    int rid = get_global_id(1);
-
-    unsigned int otherid;
-
-    float2 ray = {p2.x - p1.x, p2.y - p1.y};
-    float ray_length = length(ray);
-    float2 ray_unit = {ray.x / ray_length, ray.y / ray_length};
-
-    for (otherid = 0; otherid < ROBOTS_PER_WORLD; otherid++)
-    {
-        if (rid == otherid)
-            continue;
-
-        float dist = distance(p1, worlds[wid].robots[otherid].transform.pos);
-
-        if (dist < ray_length + ROBOT_BODY_RADIUS)
-        {
-            float2 v1 = { worlds[wid].robots[otherid].transform.pos.x - p1.x,
-                          worlds[wid].robots[otherid].transform.pos.y - p1.y };
-
-            float proj = v1.x * ray_unit.x + v1.y * ray_unit.y;
-
-            if ((proj > 0) && (proj < ray_length)) {
-                float2 d = {ray_unit.x * proj, ray_unit.y * proj};
-                d.x += p1.x;
-                d.y += p1.y;
-
-                if (distance(d, worlds[wid].robots[otherid].transform.pos) < ROBOT_BODY_RADIUS)
-                    return true;
-            }
-        }
-    }
-
-    return false;
-}
-
-int _raycast(__global world_t *worlds)
+/* int _raycast(__global world_t *worlds)
 {
     float2 front = {(ROBOT_BODY_RADIUS + LED_PROTUBERANCE), 0};
 
@@ -140,6 +101,6 @@ __kernel void test_raycast(__global world_t *worlds, __global int *result)
     worlds[0].robots[2].transform.rot.cos = 0;
 
     result[3] = _raycast(worlds);
-}
+}*/
 
 #endif

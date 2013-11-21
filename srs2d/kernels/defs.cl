@@ -8,7 +8,7 @@
 #define CAMERA_RADIUS               0.35
 #define CAMERA_ANGLE                2.5132741228718345 // 144 degrees (72+72)
 #define LED_PROTUBERANCE            0
-#define TARGET_AREAS_RADIUS         0.32
+#define TARGET_AREAS_RADIUS         0.16
 
 #define ARENA_HEIGHT    2.5
 #define ARENA_WIDTH_MIN 2.5
@@ -41,6 +41,13 @@
 #define HID_hidden1     1
 #define HID_hidden2     2
 
+#define WEIGHTS_BOUNDARY_L -5.0
+#define WEIGHTS_BOUNDARY_H  5.0
+#define BIAS_BOUNDARY_L    -5.0
+#define BIAS_BOUNDARY_H     5.0
+#define TIMEC_BOUNDARY_L    0.0
+#define TIMEC_BOUNDARY_H    1.0
+
 typedef struct {
     float sin;
     float cos;
@@ -57,6 +64,7 @@ typedef struct {
 } wall_t;
 
 typedef struct {
+    unsigned int id;
     transform_t transform;
     transform_t previous_transform;
     float2 wheels_angular_speed;
@@ -79,6 +87,8 @@ typedef struct {
 } target_area_t;
 
 typedef struct {
+    unsigned int id;
+
     robot_t robots[ROBOTS_PER_WORLD];
 
     float k;

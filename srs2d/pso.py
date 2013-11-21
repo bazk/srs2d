@@ -165,9 +165,7 @@ class PSO(object):
         run.done()
 
     def evaluate(self, distances, trials):
-        for p in range(len(self.particles)):
-            self.simulator.set_ann_parameters(p, self.particles[p].position)
-        self.simulator.commit_ann_parameters()
+        self.simulator.set_ann_parameters([ p.position.encoded for p in self.particles ])
 
         for p in range(len(self.particles)):
             self.particles[p].fitness = 0.0
@@ -192,9 +190,8 @@ class PSO(object):
 
         save = io.SaveFile.new(filename, step_rate=1/float(simulator.time_step))
 
-        simulator.set_ann_parameters(0, pos)
-        simulator.commit_ann_parameters()
         simulator.init_worlds(distance)
+        simulator.set_ann_parameters([ pos ])
 
         arena, target_areas, target_areas_radius = simulator.get_world_transforms()
         save.add_object('arena', io.SHAPE_RECTANGLE, x=0.0, y=0.0, width=arena[0][0], height=arena[0][1])

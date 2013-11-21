@@ -49,65 +49,87 @@ class Simulator(object):
         self.tb = tb
         self.time_step = time_step
 
-        options = '-DNUM_WORLDS=%d -DROBOTS_PER_WORLD=%d -DTIME_STEP=%f -DTA=%d -DTB=%d -I"%s"' % (num_worlds, num_robots, time_step, ta, tb, os.path.join(__dir__, 'kernels/'))
-
-        if (test):
-            options += ' -DTEST'
-
-        src = open(os.path.join(__dir__, 'kernels/physics.cl'), 'r')
-        self.prg = cl.Program(context, src.read()).build(options=options)
-
-        # query the structs sizes
-        sizeof = np.zeros(1, dtype=np.int32)
-        sizeof_buf = cl.Buffer(context, 0, 4)
-
-        self.prg.size_of_world_t(queue, (1,), None, sizeof_buf).wait()
-        cl.enqueue_copy(queue, sizeof, sizeof_buf)
-        self.sizeof_world_t = int(sizeof[0])
+        self.sizeof_world_t = self.__query_sizeof_world_t(context, queue, num_robots)
 
         # estimate how many work items can be executed in parallel in each work group
         self.work_group_size = pyopencl.characterize.get_simd_group_size(self.queue.device, self.sizeof_world_t)
-        self.global_size = (num_worlds, num_robots)
-        if self.work_group_size >= num_robots:
-            self.local_size = (self.work_group_size / num_robots, num_robots)
-            self.need_global_barrier = False
-        else:
-            self.local_size = (1, self.work_group_size)
-            self.need_global_barrier = True
 
-        # create buffers
-        self.worlds = cl.Buffer(context, 0, num_worlds * self.sizeof_world_t)
+        if self.work_group_size >= num_robots:
+            self.global_size = (num_worlds, num_robots)
+
+            # manually defining the local size ensuring that all the robots from
+            # the same world will be executed on the same work group (avoiding
+            # concurrency problems)
+            d1 = self.work_group_size / num_robots
+            if (d1 > num_worlds):
+                d1 = num_worlds
+            self.local_size = (d1, num_robots)
+
+            self.work_items_are_worlds = False
+
+        else:
+            self.global_size = (self.num_worlds,)
+
+            # let opencl decide which local size is best (no concurrency
+            # problems here)
+            self.local_size = None
+
+            self.work_items_are_worlds = True
+
+        options = [
+            '-I"%s"' % os.path.join(__dir__, 'kernels/'),
+            '-DNUM_WORLDS=%d' % num_worlds,
+            '-DROBOTS_PER_WORLD=%d' % num_robots,
+            '-DTIME_STEP=%f' % time_step,
+            '-DTA=%d' % ta,
+            '-DTB=%d' % tb
+        ]
+
+        if (test):
+            options.append('-DTEST')
+
+        if (self.work_items_are_worlds):
+            options.append('-DWORK_ITEMS_ARE_WORLDS')
+        else:
+            options.append('-DWORLDS_PER_LOCAL=%d' % self.local_size[0])
+            options.append('-DROBOTS_PER_LOCAL=%d' % self.local_size[1])
+
+        src = open(os.path.join(__dir__, 'kernels/physics.cl'), 'r')
+        self.prg = cl.Program(context, src.read()).build(options=' '.join(options))
 
         # initialize random number generator
         self.ranluxcl = cl.Buffer(context, 0, num_worlds * num_robots * 112)
-        kernel = self.prg.init_ranluxcl
-        kernel.set_scalar_arg_dtypes((np.uint32, None))
-        kernel(queue, self.global_size, self.local_size, random.randint(0, 4294967295), self.ranluxcl).wait()
+        init_ranluxcl = self.prg.init_ranluxcl
+        init_ranluxcl.set_scalar_arg_dtypes((np.uint32, None))
+        init_ranluxcl(queue, self.global_size, self.local_size, random.randint(0, 4294967295), self.ranluxcl).wait()
 
-        # initialize neural network
-        self.weights = np.random.rand(num_worlds*NUM_ACTUATORS*(NUM_SENSORS+NUM_HIDDEN)).astype(np.float32) * 10 - 5
-        self.weights_buf = cl.Buffer(context, cl.mem_flags.COPY_HOST_PTR, hostbuf=self.weights)
-        self.bias = np.random.rand(num_worlds*NUM_ACTUATORS).astype(np.float32) * 10 - 5
-        self.bias_buf = cl.Buffer(context, cl.mem_flags.COPY_HOST_PTR, hostbuf=self.bias)
+        # create and initialize worlds
+        self.worlds = cl.Buffer(context, 0, num_worlds * self.sizeof_world_t)
+        self.init_worlds(0.7)
 
-        self.weights_hidden = np.random.rand(num_worlds*NUM_HIDDEN*NUM_SENSORS).astype(np.float32) * 10 - 5
-        self.weights_hidden_buf = cl.Buffer(context, cl.mem_flags.COPY_HOST_PTR, hostbuf=self.weights_hidden)
+    def __query_sizeof_world_t(self, context, queue, num_robots):
+        src = '''
+        #include <defs.cl>
 
-        self.bias_hidden = np.random.rand(num_worlds*NUM_HIDDEN).astype(np.float32) * 10 - 5
-        self.bias_hidden_buf = cl.Buffer(context, cl.mem_flags.COPY_HOST_PTR, hostbuf=self.bias_hidden)
+        __kernel void size_of_world_t(__global unsigned int *result)
+        {
+            *result = (unsigned int) sizeof(world_t);
+        }
+        '''
 
-        self.timec_hidden = np.random.rand(num_worlds*NUM_HIDDEN).astype(np.float32)
-        self.timec_hidden_buf = cl.Buffer(context, cl.mem_flags.COPY_HOST_PTR, hostbuf=self.timec_hidden)
+        prg = cl.Program(context, src).build(options='-I"%s" -DROBOTS_PER_WORLD=%d' % (os.path.join(__dir__, 'kernels/'), num_robots))
 
-        self.prg.set_ann_parameters(queue, (num_worlds,), None,
-            self.ranluxcl, self.worlds, self.weights_buf, self.bias_buf,
-            self.weights_hidden_buf, self.bias_hidden_buf, self.timec_hidden_buf).wait()
+        sizeof_buf = cl.Buffer(context, 0, 4)
+        prg.size_of_world_t(queue, (1,), None, sizeof_buf).wait()
+
+        sizeof = np.zeros(1, dtype=np.uint32)
+        cl.enqueue_copy(queue, sizeof, sizeof_buf).wait()
+        return int(sizeof[0])
 
     def init_worlds(self, target_areas_distance):
         init_worlds = self.prg.init_worlds
         init_worlds.set_scalar_arg_dtypes((None, None, np.float32))
         init_worlds(self.queue, (self.num_worlds,), None, self.ranluxcl, self.worlds, target_areas_distance).wait()
-        self.prg.init_robots(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
 
     def step(self, current_step):
         step_robots = self.prg.step_robots
@@ -115,14 +137,20 @@ class Simulator(object):
         step_robots(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds, current_step).wait()
 
     def simulate(self):
-        if not self.need_global_barrier:
-            self.prg.simulate(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
+        self.prg.simulate(self.queue, self.global_size, self.local_size, self.ranluxcl, self.worlds).wait()
 
-        else:
-            cur = 0
-            while (cur < (self.ta+self.tb)):
-                self.step(cur)
-                cur += 1
+    def set_ann_parameters(self, parameters):
+        if len(parameters) != self.num_worlds:
+            raise Exception('Number of parameters is not equal to the number of worlds!')
+
+        param = np.chararray(len(parameters), len(parameters[0]))
+        param[:] = parameters
+
+        param_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=param)
+
+        set_ann_parameters = self.prg.set_ann_parameters
+        set_ann_parameters.set_scalar_arg_dtypes((None, None, np.uint32))
+        set_ann_parameters(self.queue, (self.num_worlds,), None, self.worlds, param_buf, len(parameters[0])).wait()
 
     def get_world_transforms(self):
         arena = np.zeros(self.num_worlds, dtype=np.dtype((np.float32, (2,))))
@@ -143,31 +171,16 @@ class Simulator(object):
     def get_transforms(self):
         transforms = np.zeros(self.num_worlds * self.num_robots, dtype=np.dtype((np.float32, (4,))))
         radius = np.zeros(self.num_worlds * self.num_robots, dtype=np.dtype((np.float32, (1,))))
+
         trans_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=transforms)
         radius_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=radius)
+
         self.prg.get_transform_matrices(self.queue, self.global_size, self.local_size, self.worlds, trans_buf, radius_buf).wait()
+
         cl.enqueue_copy(self.queue, transforms, trans_buf)
         cl.enqueue_copy(self.queue, radius, radius_buf)
+
         return transforms, radius
-
-    def set_ann_parameters(self, world, parameters):
-        p = parameters.decode()
-        self.weights[world*NUM_ACTUATORS*(NUM_SENSORS+NUM_HIDDEN):(world+1)*NUM_ACTUATORS*(NUM_SENSORS+NUM_HIDDEN)] = p['weights']
-        self.bias[world*NUM_ACTUATORS:(world+1)*NUM_ACTUATORS] = p['bias']
-        self.weights_hidden[world*NUM_HIDDEN*NUM_SENSORS:(world+1)*NUM_HIDDEN*NUM_SENSORS] = p['weights_hidden']
-        self.bias_hidden[world*NUM_HIDDEN:(world+1)*NUM_HIDDEN] = p['bias_hidden']
-        self.timec_hidden[world*NUM_HIDDEN:(world+1)*NUM_HIDDEN] = p['timec_hidden']
-
-    def commit_ann_parameters(self):
-        cl.enqueue_copy(self.queue, self.weights_buf, self.weights)
-        cl.enqueue_copy(self.queue, self.bias_buf, self.bias)
-        cl.enqueue_copy(self.queue, self.weights_hidden_buf, self.weights_hidden)
-        cl.enqueue_copy(self.queue, self.bias_hidden_buf, self.bias_hidden)
-        cl.enqueue_copy(self.queue, self.timec_hidden_buf, self.timec_hidden)
-
-        self.prg.set_ann_parameters(self.queue, (self.num_worlds,), None,
-            self.ranluxcl, self.worlds, self.weights_buf, self.bias_buf,
-            self.weights_hidden_buf, self.bias_hidden_buf, self.timec_hidden_buf).wait()
 
     def get_fitness(self):
         fitness = np.zeros(self.num_worlds, dtype=np.float32)
@@ -200,35 +213,6 @@ class Simulator(object):
 
         return sensors, actuators, hidden
 
-    @staticmethod
-    def test_raycast():
-        context = cl.create_some_context()
-        queue = cl.CommandQueue(context)
-
-        options = '-DROBOTS_PER_WORLD=%d -DTIME_STEP=%f -DTA=%f -DTB=%f -DDYNAMICS_ITERATIONS=%d' % (3, 1/10.0, 600, 5400, 4)
-
-        src = open(os.path.join(__dir__, 'kernels/physics.cl'), 'r')
-        prg = cl.Program(context, src.read()).build(options=options)
-
-        # query the structs sizes
-        sizeof = np.zeros(1, dtype=np.int32)
-        sizeof_buf = cl.Buffer(context, 0, 4)
-
-        prg.size_of_world_t(queue, (1,), None, sizeof_buf).wait()
-        cl.enqueue_copy(queue, sizeof, sizeof_buf)
-        sizeof_world_t = int(sizeof[0])
-
-        # create buffers
-        worlds = cl.Buffer(context, 0, sizeof_world_t)
-
-        results = np.zeros(4, dtype=np.int32)
-        results_buf = cl.Buffer(context, cl.mem_flags.COPY_HOST_PTR, hostbuf=results)
-
-        prg.test_raycast(queue, (1,), None, worlds, results_buf).wait()
-        cl.enqueue_copy(queue, results, results_buf)
-
-        print results
-
 class ANNParametersArray(object):
     WEIGHTS_BOUNDARY = (-5.0, 5.0)
     BIAS_BOUNDARY = (-5.0, 5.0)
@@ -257,7 +241,7 @@ class ANNParametersArray(object):
         return ret
 
     def __len__(self):
-        return len(self.encoded) * 8
+        return len(self.encoded)
 
     def export(self):
         return self.__str__()
@@ -308,7 +292,7 @@ class ANNParametersArray(object):
         if len(self) != len(other):
             raise Exception('Cannot merge arrays of different sizes.')
 
-        if (point < 0) or (point > (len(self) - 1)):
+        if (point < 0) or (point > (len(self)*8 - 1)):
             raise Exception('Point out of bounds.')
 
         idx = int(math.floor(float(point) / 8.0))
@@ -331,7 +315,7 @@ class ANNParametersArray(object):
         self.encoded = new
 
     def flip(self, point):
-        if (point < 0) or (point > (len(self) - 1)):
+        if (point < 0) or (point > (len(self)*8 - 1)):
             raise Exception('Point out of bounds.')
 
         idx = int(math.floor(float(point) / 8.0))
