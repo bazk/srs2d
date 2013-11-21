@@ -28,7 +28,9 @@ class TestSimulator(object):
         context = cl.create_some_context()
         queue = cl.CommandQueue(context)
 
-        simulator = physics.Simulator(context, queue, num_worlds=1, num_robots=num_robots, ta=ta, tb=tb, test=True)
+        num_worlds = 20
+
+        simulator = physics.Simulator(context, queue, num_worlds=num_worlds, num_robots=num_robots, ta=ta, tb=tb, test=True)
 
         if ann_params is not None:
             pos = physics.ANNParametersArray.load(ann_params)
@@ -55,8 +57,8 @@ class TestSimulator(object):
             transforms, radius = simulator.get_transforms()
             robot_radius = radius[0][0]
 
-            robot_obj = [ None for i in range(len(transforms)) ]
-            for i in range(len(transforms)):
+            robot_obj = [ None for i in range(len(transforms)/num_worlds) ]
+            for i in range(len(transforms)/num_worlds):
                 robot_obj[i] = save_file.add_object('robot'+str(i), io.SHAPE_CIRCLE,
                     x=transforms[i][0], y=transforms[i][1], radius=robot_radius,
                     sin=transforms[i][2], cos=transforms[i][3],
@@ -73,7 +75,7 @@ class TestSimulator(object):
                 fitene = simulator.get_individual_fitness_energy()
                 sensors, actuators, hidden = simulator.get_ann_state()
                 transforms, radius = simulator.get_transforms()
-                for i in range(len(transforms)):
+                for i in range(len(transforms)/num_worlds):
                     robot_obj[i].update(
                         x=transforms[i][0], y=transforms[i][1],
                         sin=transforms[i][2], cos=transforms[i][3],
