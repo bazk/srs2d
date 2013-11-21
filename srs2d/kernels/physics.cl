@@ -155,7 +155,6 @@ __kernel void init_robots(__global ranluxcl_state_t *ranluxcltab, __global world
     worlds[wid].robots[rid].fitness = 0;
     worlds[wid].robots[rid].last_target_area = -1;
     worlds[wid].robots[rid].entered_new_target_area = 0;
-    worlds[wid].robots[rid].collision_count = 0;
 
     for (i=0; i<NUM_SENSORS; i++)
         worlds[wid].robots[rid].sensors[i] = 0;
@@ -477,7 +476,6 @@ __kernel void step_collisions(__global ranluxcl_state_t *ranluxcltab, __global w
 
     if (worlds[wid].robots[rid].collision != 0) {
         worlds[wid].robots[rid].collision = 0;
-        worlds[wid].robots[rid].collision_count += 1;
 
         worlds[wid].robots[rid].transform.pos.x = worlds[wid].robots[rid].previous_transform.pos.x;
         worlds[wid].robots[rid].transform.pos.y = worlds[wid].robots[rid].previous_transform.pos.y;
@@ -626,15 +624,8 @@ __kernel void get_fitness(__global world_t *worlds, __global float *fitness)
 
     float avg_fitness = 0;
 
-    for (rid = 0; rid < ROBOTS_PER_WORLD; rid++) {
-        // if (worlds[wid].robots[rid].collision_count > 0) {
-        //     // if one robot collided, fitness is zeroed
-        //     fitness[wid] = 0;
-        //     return;
-        // }
-
+    for (rid = 0; rid < ROBOTS_PER_WORLD; rid++)
         avg_fitness += worlds[wid].robots[rid].fitness / max_trips;
-    }
 
     fitness[wid] = avg_fitness / ROBOTS_PER_WORLD;
 }
