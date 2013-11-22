@@ -124,12 +124,10 @@ __kernel void simulate(__global ranluxcl_state_t *ranluxcltab,
             robot_radius[world->id] = ROBOT_BODY_RADIUS;
             arena_size[world->id].x = world->arena_width;
             arena_size[world->id].y = world->arena_height;
-            target_areas_pos[world->id].x = world->target_areas[0].center.x;
-            target_areas_pos[world->id].y = world->target_areas[0].center.y;
-            target_areas_pos[world->id+1].x = world->target_areas[1].center.x;
-            target_areas_pos[world->id+1].y = world->target_areas[1].center.y;
-            target_areas_radius[world->id] = world->target_areas[0].radius;
-            target_areas_radius[world->id+1] = world->target_areas[1].radius;
+            target_areas_pos[world->id*2] = world->target_areas[0].center;
+            target_areas_pos[world->id*2+1] = world->target_areas[1].center;
+            target_areas_radius[world->id*2] = world->target_areas[0].radius;
+            target_areas_radius[world->id*2+1] = world->target_areas[1].radius;
 
             for (rid = 0; rid < ROBOTS_PER_WORLD; rid++)
             {
@@ -217,12 +215,10 @@ __kernel void simulate(__global ranluxcl_state_t *ranluxcltab,
                 robot_radius[world->id] = ROBOT_BODY_RADIUS;
                 arena_size[world->id].x = world->arena_width;
                 arena_size[world->id].y = world->arena_height;
-                target_areas_pos[world->id].x = world->target_areas[0].center.x;
-                target_areas_pos[world->id].y = world->target_areas[0].center.y;
-                target_areas_pos[world->id+1].x = world->target_areas[1].center.x;
-                target_areas_pos[world->id+1].y = world->target_areas[1].center.y;
+                target_areas_pos[world->id*2] = world->target_areas[0].center;
+                target_areas_pos[world->id*2+1] = world->target_areas[1].center;
                 target_areas_radius[world->id] = world->target_areas[0].radius;
-                target_areas_radius[world->id+1] = world->target_areas[1].radius;
+                target_areas_radius[world->id*2+1] = world->target_areas[1].radius;
             }
 
             fitness_hist[idx+robot->id] = robot->fitness;
