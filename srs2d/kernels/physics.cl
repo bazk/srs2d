@@ -281,11 +281,11 @@ void init_world(__global ranluxcl_state_t *ranluxcltab,
     world->walls[3].p2.y = -world->arena_height / 2;
 
     // target areas
-    float x = sqrt(pow((targets_distance / 2.0), 2) / 2.0);
-    world->target_areas[0].center.x = -x;
-    world->target_areas[0].center.y = x;
-    world->target_areas[1].center.x = x;
-    world->target_areas[1].center.y = -x;
+    // float x = sqrt(pow((targets_distance / 2.0), 2) / 2.0);
+    world->target_areas[0].center.x = 0;
+    world->target_areas[0].center.y = targets_distance / 2;
+    world->target_areas[1].center.x = 0;
+    world->target_areas[1].center.y = -targets_distance / 2;
 
     world->target_areas[0].radius = TARGET_AREAS_RADIUS;
     world->target_areas[1].radius = TARGET_AREAS_RADIUS;
