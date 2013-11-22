@@ -16,7 +16,7 @@
 #include <defs.cl>
 #include <util.cl>
 
-#include <pyopencl-ranluxcl.cl>
+#include <ranluxcl.cl>
 
 #include <motor_samples.cl>
 #include <ir_wall_samples.cl>
