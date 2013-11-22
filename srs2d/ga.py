@@ -26,7 +26,6 @@ import physics
 import pyopencl as cl
 import logging.config
 import solace
-import io
 import png
 import subprocess
 import hashlib

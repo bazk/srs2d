@@ -5,12 +5,8 @@
 
 #if defined(WORK_ITEMS_ARE_WORLDS) || defined(NO_LOCAL)
     #define WORLD_MEM_SPACE __global
-    #define WORLD_ID_GETTER get_global_id
-    #define WORLD_BARRIER CLK_GLOBAL_MEM_FENCE
 #else
     #define WORLD_MEM_SPACE __local
-    #define WORLD_ID_GETTER get_local_id
-    #define WORLD_BARRIER CLK_LOCAL_MEM_FENCE
 #endif
 
 #include <defs.cl>
@@ -22,25 +18,13 @@
 #include <ir_wall_samples.cl>
 #include <ir_round_samples.cl>
 
-__kernel void init_ranluxcl(uint seed, __global ranluxcl_state_t *ranluxcltab);
-
-void init_world(__global ranluxcl_state_t *ranluxcltab,
-                WORLD_MEM_SPACE world_t *world,
-                float targets_distance,
-                __global unsigned char *params);
-
+void init_world(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, float targets_distance, __global unsigned char *params);
 void init_robot(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot);
-
 void set_random_position(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot);
-
 void step_actuators(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot);
-
 void step_sensors(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot);
-
 void step_collisions(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot);
-
 void step_controllers(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot);
-
 bool raycast(WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot, float2 p1, float2 p2);
 
 __kernel void init_ranluxcl(uint seed, __global ranluxcl_state_t *ranluxcltab)
@@ -74,6 +58,10 @@ __kernel void simulate(__global ranluxcl_state_t *ranluxcltab,
     unsigned int cur = 0;
     unsigned int rid;
 
+    // k = number of time steps needed for a robot to consume one unit of energy while moving at maximum speed
+    float k = (targets_distance / (2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS)) / TIME_STEP;
+
+    // max_trips = maximum number of trips a robot, at maximum speed, can perform during a simulation of TB time steps
     int max_trips = (int) floor( ((2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS) * TB * TIME_STEP) / targets_distance );
 
 #if defined(WORK_ITEMS_ARE_WORLDS) || defined(NO_LOCAL)
@@ -103,7 +91,7 @@ __kernel void simulate(__global ranluxcl_state_t *ranluxcltab,
                 WORLD_MEM_SPACE robot_t *robot = &world->robots[rid];
 
                 robot->energy -= (fabs(robot->wheels_angular_speed.s0) + fabs(robot->wheels_angular_speed.s1)) /
-                                                    (2 * world->k * WHEELS_MAX_ANGULAR_SPEED);
+                                                    (2 * k * WHEELS_MAX_ANGULAR_SPEED);
                 if (robot->energy < 0)
                     robot->energy = 0;
 
@@ -193,7 +181,7 @@ __kernel void simulate(__global ranluxcl_state_t *ranluxcltab,
         if (cur > TA)
         {
             robot->energy -= (fabs(robot->wheels_angular_speed.s0) + fabs(robot->wheels_angular_speed.s1)) /
-                                                (2 * world->k * WHEELS_MAX_ANGULAR_SPEED);
+                                                (2 * k * WHEELS_MAX_ANGULAR_SPEED);
             if (robot->energy < 0)
                 robot->energy = 0;
 
@@ -263,9 +251,6 @@ void init_world(__global ranluxcl_state_t *ranluxcltab,
                 float targets_distance,
                 __global unsigned char *params)
 {
-    // k = number of time steps needed for a robot to consume one unit of energy while moving at maximum speed
-    world->k = (targets_distance / (2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS)) / TIME_STEP;
-
     // walls
     ranluxcl_state_t ranluxclstate;
     ranluxcl_download_seed(&ranluxclstate, ranluxcltab);
@@ -296,8 +281,6 @@ void init_world(__global ranluxcl_state_t *ranluxcltab,
     world->walls[3].p2.y = -world->arena_height / 2;
 
     // target areas
-    world->targets_distance = targets_distance;
-
     float x = sqrt(pow((targets_distance / 2.0), 2) / 2.0);
     world->target_areas[0].center.x = -x;
     world->target_areas[0].center.y = x;
@@ -327,7 +310,8 @@ void init_world(__global ranluxcl_state_t *ranluxcltab,
     }
 
     unsigned int rid;
-    for (rid = 0; rid < ROBOTS_PER_WORLD; rid++) {
+    for (rid = 0; rid < ROBOTS_PER_WORLD; rid++)
+    {
         world->robots[rid].id = rid;
         init_robot(ranluxcltab, world, &world->robots[rid]);
     }
@@ -679,7 +663,8 @@ void step_sensors(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_
         }
     }
 
-    for (i=0; i<NUM_SENSORS; i++) {
+    for (i=0; i<NUM_SENSORS; i++)
+    {
         if (robot->sensors[i] > 1)
             robot->sensors[i] = 1;
         if (robot->sensors[i] < 0)
@@ -689,7 +674,8 @@ void step_sensors(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_
 
 void step_collisions(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot)
 {
-    if (robot->collision != 0) {
+    if (robot->collision != 0)
+    {
         robot->collision = 0;
 
         robot->transform.pos.x = robot->previous_transform.pos.x;

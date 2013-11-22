@@ -68,13 +68,13 @@ typedef struct {
     transform_t transform;
     transform_t previous_transform;
     float2 wheels_angular_speed;
-    int front_led;
-    int rear_led;
-    int collision;
+    unsigned int front_led;
+    unsigned int rear_led;
+    unsigned int collision;
     float energy;
     float fitness;
     int last_target_area;
-    int entered_new_target_area;
+    unsigned int entered_new_target_area;
 
     float sensors[NUM_SENSORS];
     float actuators[NUM_ACTUATORS];
@@ -91,15 +91,10 @@ typedef struct {
 
     robot_t robots[ROBOTS_PER_WORLD];
 
-    float k;
-
     float arena_height;
     float arena_width;
 
     wall_t walls[4];
-
-    float targets_distance;
-
     target_area_t target_areas[2];
 
     // ANN parameters
