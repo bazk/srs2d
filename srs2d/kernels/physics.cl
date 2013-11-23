@@ -205,7 +205,7 @@ __kernel void simulate(__global ranluxcl_state_t *ranluxcltab,
                 arena_size[world->id].y = world->arena_height;
                 target_areas_pos[world->id*2] = world->target_areas[0].center;
                 target_areas_pos[world->id*2+1] = world->target_areas[1].center;
-                target_areas_radius[world->id] = world->target_areas[0].radius;
+                target_areas_radius[world->id*2] = world->target_areas[0].radius;
                 target_areas_radius[world->id*2+1] = world->target_areas[1].radius;
             }
 
