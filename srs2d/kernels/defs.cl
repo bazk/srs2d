@@ -7,7 +7,6 @@
 #define WHEELS_RADIUS               0.02
 #define CAMERA_RADIUS               0.35
 #define CAMERA_ANGLE                2.5132741228718345 // 144 degrees (72+72)
-#define LED_PROTUBERANCE            0
 #define TARGET_AREAS_RADIUS         0.16
 
 #define ARENA_HEIGHT    2.5
@@ -79,6 +78,9 @@ typedef struct {
     float sensors[NUM_SENSORS];
     float actuators[NUM_ACTUATORS];
     float hidden[NUM_HIDDEN];
+
+    float dist_table[ROBOTS_PER_WORLD+2]; // +2 'cause target areas
+    char raycast_table[ROBOTS_PER_WORLD+2];
 } robot_t;
 
 typedef struct {

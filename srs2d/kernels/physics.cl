@@ -25,7 +25,9 @@ void step_actuators(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE worl
 void step_sensors(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot);
 void step_collisions(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot);
 void step_controllers(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot);
-bool raycast(WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot, float2 p1, float2 p2);
+// bool raycast(WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot, float2 p1, float2 p2);
+void fill_dist_table(WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot);
+void fill_raycast_table(WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot);
 
 __kernel void init_ranluxcl(uint seed, __global ranluxcl_state_t *ranluxcltab)
 {
@@ -446,184 +448,130 @@ void step_actuators(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE worl
 void step_sensors(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot)
 {
     unsigned int i, j, otherid;
+    WORLD_MEM_SPACE robot_t *other;
 
-    float2 pos = { robot->transform.pos.x,
-                   robot->transform.pos.y };
+    // float2 pos = { robot->transform.pos.x,
+    //                robot->transform.pos.y };
 
     for (i=0; i<NUM_SENSORS; i++)
         robot->sensors[i] = 0;
 
     robot->entered_new_target_area = 0;
 
-    if ( ((pos.x+(ROBOT_BODY_RADIUS+IR_WALL_DIST_MAX)) > (world->arena_width/2)) ||
-         ((pos.x-(ROBOT_BODY_RADIUS+IR_WALL_DIST_MAX)) < (-world->arena_width/2)) ||
-         ((pos.y+(ROBOT_BODY_RADIUS+IR_WALL_DIST_MAX)) > (world->arena_height/2)) ||
-         ((pos.y-(ROBOT_BODY_RADIUS+IR_WALL_DIST_MAX)) < (-world->arena_height/2)) )
-    {
-        if ( ((pos.x+ROBOT_BODY_RADIUS) > (world->arena_width/2)) ||
-             ((pos.x-ROBOT_BODY_RADIUS) < (-world->arena_width/2)) ||
-             ((pos.y+ROBOT_BODY_RADIUS) > (world->arena_height/2)) ||
-             ((pos.y-ROBOT_BODY_RADIUS) < (-world->arena_height/2)) )
-        {
-            robot->collision = 1;
-        }
-
-        // IR against 4 walls
-        for (i = 0; i < 4; i++)
-        {
-            float2 proj;
-
-            if ((pos.x >= world->walls[i].p1.x) && (pos.x <= world->walls[i].p2.x))
-                proj.x = pos.x;
-            else
-                proj.x = world->walls[i].p1.x;
-
-            if ((pos.y >= world->walls[i].p1.y) && (pos.y <= world->walls[i].p2.y))
-                proj.y = pos.y;
-            else
-                proj.y = world->walls[i].p1.y;
-
-            float dist = distance(proj, pos) - ROBOT_BODY_RADIUS;
-
-            if (dist <= IR_WALL_DIST_MAX) {
-                int dist_idx;
-
-                if (dist <= IR_WALL_DIST_MIN)
-                    dist_idx = 0;
-                else
-                    dist_idx = (int) floor((dist - IR_WALL_DIST_MIN) / IR_WALL_DIST_INTERVAL);
-
-                float wall_angle;
-                if (proj.x == pos.x)
-                    if (proj.y < pos.y)
-                        wall_angle = 3 * M_PI / 2;
-                    else
-                        wall_angle = M_PI / 2;
-                else
-                    if (proj.x < pos.x)
-                        wall_angle = M_PI;
-                    else
-                        wall_angle = 0;
-
-                float diff_angle = angle_rot(robot->transform.rot) - wall_angle;
-
-                if (diff_angle >= (2*M_PI))
-                    diff_angle -= 2*M_PI;
-                else if (diff_angle < 0)
-                    diff_angle += 2*M_PI;
-
-                int angle_idx = (int) floor(diff_angle / (2*M_PI / IR_WALL_ANGLE_COUNT));
-
-                for (j = 0; j < 8; j++)
-                    robot->sensors[j] += IR_WALL_SAMPLES[dist_idx][angle_idx][j] / 1024.0f;
-            }
-        }
-    }
+    fill_dist_table(world, robot);
+    fill_raycast_table(world, robot);
 
     for (otherid = 0; otherid < ROBOTS_PER_WORLD; otherid++)
     {
-        WORLD_MEM_SPACE robot_t *other = &world->robots[otherid];
+        other = &world->robots[otherid];
 
         if (robot->id == other->id)
             continue;
 
-        float dist = distance(robot->transform.pos, other->transform.pos);
-
-        if (dist < 2*ROBOT_BODY_RADIUS) {
+        if (robot->dist_table[otherid] < (2*ROBOT_BODY_RADIUS))
             robot->collision = 1;
-        }
 
         // IR against other robots
-        if (dist < (2*ROBOT_BODY_RADIUS+IR_ROUND_DIST_MAX))
-        {
-            float d = dist - 2*ROBOT_BODY_RADIUS;
+        float d = robot->dist_table[otherid] - 2*ROBOT_BODY_RADIUS;
 
-            int dist_idx;
-            if (d <= IR_ROUND_DIST_MIN)
-                dist_idx = 0;
-            else
-                dist_idx = (int) floor((d - IR_ROUND_DIST_MIN) / IR_ROUND_DIST_INTERVAL);
+        int dist_idx;
+        if (d <= IR_ROUND_DIST_MIN)
+            dist_idx = 0;
+        else if (d >= IR_ROUND_DIST_MAX)
+            dist_idx = IR_ROUND_DIST_COUNT-1;
+        else
+            dist_idx = (int) floor((d - IR_ROUND_DIST_MIN) / IR_ROUND_DIST_INTERVAL);
 
-            float s = other->transform.pos.y - robot->transform.pos.y;
-            float c = other->transform.pos.x - robot->transform.pos.x;
-            float diff_angle = angle_rot(robot->transform.rot) - angle(s, c);
+        float s = other->transform.pos.y - robot->transform.pos.y;
+        float c = other->transform.pos.x - robot->transform.pos.x;
+        float diff_angle = angle_rot(robot->transform.rot) - angle(s, c);
 
-            if (diff_angle >= (2*M_PI))
-                diff_angle -= 2*M_PI;
-            else if (diff_angle < 0)
-                diff_angle += 2*M_PI;
+        if (diff_angle >= (2*M_PI))
+            diff_angle -= 2*M_PI;
+        else if (diff_angle < 0)
+            diff_angle += 2*M_PI;
 
-            int angle_idx = (int) floor(diff_angle / ((2*M_PI) / IR_ROUND_ANGLE_COUNT));
+        int angle_idx = (int) floor(diff_angle / ((2*M_PI) / IR_ROUND_ANGLE_COUNT));
 
-            for (j = 0; j < 8; j++)
-                robot->sensors[j] += IR_ROUND_SAMPLES[dist_idx][angle_idx][j] / 1024.0f;
-        }
+        for (j = 0; j < 8; j++)
+            robot->sensors[j] += IR_ROUND_SAMPLES[dist_idx][angle_idx][j] / 1024.0f;
 
-        // other robots in camera
-        if (dist < (CAMERA_RADIUS + ROBOT_BODY_RADIUS + LED_PROTUBERANCE))
-        {
-            float2 front = {(ROBOT_BODY_RADIUS + LED_PROTUBERANCE), 0};
-            float2 rear = {-(ROBOT_BODY_RADIUS + LED_PROTUBERANCE), 0};
+        // camera
+        robot->sensors[IN_camera0] += ((robot->raycast_table[otherid] & 1) != 0) ? 1 : 0;
+        robot->sensors[IN_camera1] += ((robot->raycast_table[otherid] & 2) != 0) ? 1 : 0;
+        robot->sensors[IN_camera2] += ((robot->raycast_table[otherid] & 4) != 0) ? 1 : 0;
+        robot->sensors[IN_camera3] += ((robot->raycast_table[otherid] & 8) != 0) ? 1 : 0;
 
-            float2 orig = robot->transform.pos;
-            float angle_robot = angle(robot->transform.rot.sin, robot->transform.rot.cos);
+    // if ( ((pos.x+(ROBOT_BODY_RADIUS+IR_WALL_DIST_MAX)) > (world->arena_width/2)) ||
+    //      ((pos.x-(ROBOT_BODY_RADIUS+IR_WALL_DIST_MAX)) < (-world->arena_width/2)) ||
+    //      ((pos.y+(ROBOT_BODY_RADIUS+IR_WALL_DIST_MAX)) > (world->arena_height/2)) ||
+    //      ((pos.y-(ROBOT_BODY_RADIUS+IR_WALL_DIST_MAX)) < (-world->arena_height/2)) )
+    // {
+    //     if ( ((pos.x+ROBOT_BODY_RADIUS) > (world->arena_width/2)) ||
+    //          ((pos.x-ROBOT_BODY_RADIUS) < (-world->arena_width/2)) ||
+    //          ((pos.y+ROBOT_BODY_RADIUS) > (world->arena_height/2)) ||
+    //          ((pos.y-ROBOT_BODY_RADIUS) < (-world->arena_height/2)) )
+    //     {
+    //         robot->collision = 1;
+    //     }
 
-            if (other->front_led == 1)
-            {
-                float2 dest = transform_mul_vec(other->transform, front);
-                float d = distance(orig, dest);
+    //     // IR against 4 walls
+    //     for (i = 0; i < 4; i++)
+    //     {
+    //         float2 proj;
 
-                if (d < CAMERA_RADIUS)
-                {
-                    float angle_dest = angle(dest.y - orig.y, dest.x - orig.x);
+    //         if ((pos.x >= world->walls[i].p1.x) && (pos.x <= world->walls[i].p2.x))
+    //             proj.x = pos.x;
+    //         else
+    //             proj.x = world->walls[i].p1.x;
 
-                    if ( (angle_robot >= angle_dest) &&
-                         ((angle_robot-angle_dest) <= (CAMERA_ANGLE/2)) )
-                    {
-                        if (!raycast(world, robot, orig, dest))
-                            robot->sensors[IN_camera0] = 1.0;
-                    }
-                    if ( (angle_dest >= angle_robot) &&
-                              ((angle_dest-angle_robot) <= (CAMERA_ANGLE/2)) )
-                    {
-                        if (!raycast(world, robot, orig, dest))
-                            robot->sensors[IN_camera1] = 1.0;
-                    }
-                }
-            }
+    //         if ((pos.y >= world->walls[i].p1.y) && (pos.y <= world->walls[i].p2.y))
+    //             proj.y = pos.y;
+    //         else
+    //             proj.y = world->walls[i].p1.y;
 
-            if (other->rear_led == 1)
-            {
-                float2 dest = transform_mul_vec(other->transform, rear);
-                float d = distance(orig, dest);
+    //         float dist = distance(proj, pos) - ROBOT_BODY_RADIUS;
 
-                if (d < CAMERA_RADIUS)
-                {
-                    float angle_dest = angle(dest.y - orig.y, dest.x - orig.x);
+    //         if (dist <= IR_WALL_DIST_MAX) {
+    //             int dist_idx;
 
-                    if ( (angle_robot >= angle_dest) &&
-                         ((angle_robot-angle_dest) <= (CAMERA_ANGLE/2)) )
-                    {
-                        if (!raycast(world, robot, orig, dest))
-                            robot->sensors[IN_camera2] = 1.0;
-                    }
-                    if ( (angle_dest >= angle_robot) &&
-                         ((angle_dest-angle_robot) <= (CAMERA_ANGLE/2)) )
-                    {
-                        if (!raycast(world, robot, orig, dest))
-                            robot->sensors[IN_camera3] = 1.0;
-                    }
-                }
-            }
-        }
+    //             if (dist <= IR_WALL_DIST_MIN)
+    //                 dist_idx = 0;
+    //             else
+    //                 dist_idx = (int) floor((dist - IR_WALL_DIST_MIN) / IR_WALL_DIST_INTERVAL);
+
+    //             float wall_angle;
+    //             if (proj.x == pos.x)
+    //                 if (proj.y < pos.y)
+    //                     wall_angle = 3 * M_PI / 2;
+    //                 else
+    //                     wall_angle = M_PI / 2;
+    //             else
+    //                 if (proj.x < pos.x)
+    //                     wall_angle = M_PI;
+    //                 else
+    //                     wall_angle = 0;
+
+    //             float diff_angle = angle_rot(robot->transform.rot) - wall_angle;
+
+    //             if (diff_angle >= (2*M_PI))
+    //                 diff_angle -= 2*M_PI;
+    //             else if (diff_angle < 0)
+    //                 diff_angle += 2*M_PI;
+
+    //             int angle_idx = (int) floor(diff_angle / (2*M_PI / IR_WALL_ANGLE_COUNT));
+
+    //             for (j = 0; j < 8; j++)
+    //                 robot->sensors[j] += IR_WALL_SAMPLES[dist_idx][angle_idx][j] / 1024.0f;
+    //         }
+    //     }
+    // }
     }
 
     for (i = 0; i < 2; i++)
     {
-        float dist = distance(robot->transform.pos, world->target_areas[i].center);
-
         // ground sensor
-        if (dist < world->target_areas[i].radius)
+        if (robot->dist_table[ROBOTS_PER_WORLD+i] < world->target_areas[i].radius)
         {
             robot->sensors[IN_ground] = 1.0;
 
@@ -637,30 +585,8 @@ void step_sensors(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_
         }
 
         // target area led in camera
-        if (dist < CAMERA_RADIUS + ROBOT_BODY_RADIUS)
-        {
-            float2 orig = robot->transform.pos;
-            float2 dest = world->target_areas[i].center;
-            float angle_robot = angle(robot->transform.rot.sin, robot->transform.rot.cos);
-
-            if (distance(orig, dest) < CAMERA_RADIUS)
-            {
-                float angle_dest = angle(dest.y - orig.y, dest.x - orig.x);
-
-                if ( (angle_robot >= angle_dest) &&
-                     ((angle_robot-angle_dest) <= (CAMERA_ANGLE/2)) )
-                {
-                    if (!raycast(world, robot, orig, dest))
-                        robot->sensors[IN_camera2] = 1.0;
-                }
-                if ( (angle_dest >= angle_robot) &&
-                     ((angle_dest-angle_robot) <= (CAMERA_ANGLE/2)) )
-                {
-                    if (!raycast(world, robot, orig, dest))
-                        robot->sensors[IN_camera3] = 1.0;
-                }
-            }
-        }
+        robot->sensors[IN_camera2] += ((robot->raycast_table[ROBOTS_PER_WORLD+i] & 4) != 0) ? 1 : 0;
+        robot->sensors[IN_camera3] += ((robot->raycast_table[ROBOTS_PER_WORLD+i] & 8) != 0) ? 1 : 0;
     }
 
     for (i=0; i<NUM_SENSORS; i++)
@@ -736,43 +662,167 @@ void step_controllers(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE wo
 #endif
 }
 
-bool raycast(WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot, float2 p1, float2 p2)
-{
-    float2 ray = {p2.x - p1.x, p2.y - p1.y};
-    float ray_length = length(ray);
-    float2 ray_unit = {ray.x / ray_length, ray.y / ray_length};
+// bool raycast(WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot, float2 p1, float2 p2)
+// {
+//     float2 ray = {p2.x - p1.x, p2.y - p1.y};
+//     float ray_length = length(ray);
+//     float2 ray_unit = {ray.x / ray_length, ray.y / ray_length};
 
-    unsigned int otherid;
-    WORLD_MEM_SPACE robot_t *other;
+//     unsigned int otherid;
+//     WORLD_MEM_SPACE robot_t *other;
+
+//     for (otherid = 0; otherid < ROBOTS_PER_WORLD; otherid++)
+//     {
+//         other = &world->robots[otherid];
+
+//         if (robot->id == other->id)
+//             continue;
+
+//         float dist = distance(p1, other->transform.pos);
+
+//         if (dist < ray_length + ROBOT_BODY_RADIUS)
+//         {
+//             float2 v1 = { other->transform.pos.x - p1.x,
+//                           other->transform.pos.y - p1.y };
+
+//             float proj = v1.x * ray_unit.x + v1.y * ray_unit.y;
+
+//             if ((proj > 0) && (proj < ray_length)) {
+//                 float2 d = {ray_unit.x * proj, ray_unit.y * proj};
+//                 d.x += p1.x;
+//                 d.y += p1.y;
+
+//                 if (distance(d, other->transform.pos) < ROBOT_BODY_RADIUS)
+//                     return true;
+//             }
+//         }
+//     }
+
+//     return false;
+// }
+
+void fill_dist_table(WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot)
+{
+    unsigned int otherid, targetid;
+
+    for (otherid = 0; otherid < ROBOTS_PER_WORLD; otherid++)
+        robot->dist_table[otherid] = distance(robot->transform.pos, world->robots[otherid].transform.pos);
+
+    for (targetid = 0; targetid < 2; targetid++)
+        robot->dist_table[ROBOTS_PER_WORLD+targetid] = distance(robot->transform.pos, world->target_areas[targetid].center);
+}
+
+void fill_raycast_table(WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot)
+{
+    unsigned int otherid, interid, targetid;
+    float2 otherpos, interpos, targetpos;
+
+    float2 front = {ROBOT_BODY_RADIUS, 0};
+    float2 rear = {-ROBOT_BODY_RADIUS, 0};
+
+    float2 camerapos = robot->transform.pos + front;
+
+    float robot_angle = angle_rot(robot->transform.rot);
 
     for (otherid = 0; otherid < ROBOTS_PER_WORLD; otherid++)
     {
-        other = &world->robots[otherid];
-
-        if (robot->id == other->id)
+        if (robot->id == otherid)
             continue;
 
-        float dist = distance(p1, other->transform.pos);
+        otherpos = world->robots[otherid].transform.pos;
 
-        if (dist < ray_length + ROBOT_BODY_RADIUS)
+        float2 front_ray = (otherpos + front) - camerapos;
+        float front_ray_length = length(front_ray);
+        float2 front_ray_normal = front_ray / front_ray_length;
+
+        float2 rear_ray = (otherpos + rear) - camerapos;
+        float rear_ray_length = length(rear_ray);
+        float2 rear_ray_normal = rear_ray / rear_ray_length;
+
+        unsigned int front_intercept = 0, rear_intercept = 0;
+
+        for (interid = 0; interid < ROBOTS_PER_WORLD; interid++)
         {
-            float2 v1 = { other->transform.pos.x - p1.x,
-                          other->transform.pos.y - p1.y };
+            if (otherid == interid)
+                continue;
 
-            float proj = v1.x * ray_unit.x + v1.y * ray_unit.y;
+            interpos = world->robots[interid].transform.pos;
 
-            if ((proj > 0) && (proj < ray_length)) {
-                float2 d = {ray_unit.x * proj, ray_unit.y * proj};
-                d.x += p1.x;
-                d.y += p1.y;
+            float2 v1 = interpos - camerapos;
 
-                if (distance(d, other->transform.pos) < ROBOT_BODY_RADIUS)
-                    return true;
-            }
+            float front_t = dot(v1, front_ray_normal);
+            float2 front_proj = (front_ray_normal * front_t) + camerapos;
+
+            float rear_t = dot(v1, rear_ray_normal);
+            float2 rear_proj = (rear_ray_normal * rear_t) + camerapos;
+
+            front_intercept += ((front_t > 0) && (front_t < front_ray_length) &&
+                               (distance(front_proj, interpos) < ROBOT_BODY_RADIUS)) ? 1 : 0;
+
+            rear_intercept += ((rear_t > 0) && (rear_t < rear_ray_length) &&
+                              (distance(rear_proj, interpos) < ROBOT_BODY_RADIUS)) ? 1 : 0;
+        }
+
+        // if (robot->id == 0)
+        //     printf("[%d] %d %d\n", otherid, front_intercept, rear_intercept);
+
+        float front_angle = angle(front_ray_normal.y, front_ray_normal.x) - robot_angle;
+        float rear_angle = angle(rear_ray_normal.y, rear_ray_normal.x) - robot_angle;
+
+        robot->raycast_table[otherid] = 0;
+
+        if ((fabs(front_angle) < (CAMERA_ANGLE/2)) && (front_ray_length < CAMERA_RADIUS) && (front_intercept == 0))
+        {
+            if (front_angle < 0)
+                robot->raycast_table[otherid] |= 1;
+            else
+                robot->raycast_table[otherid] |= 2;
+        }
+
+        if ((fabs(rear_angle) < (CAMERA_ANGLE/2)) && (rear_ray_length < CAMERA_RADIUS) && (rear_intercept == 0))
+        {
+            if (rear_angle < 0)
+                robot->raycast_table[otherid] |= 4;
+            else
+                robot->raycast_table[otherid] |= 8;
         }
     }
 
-    return false;
+    for (targetid = 0; targetid < 2; targetid++)
+    {
+        targetpos = world->target_areas[targetid].center;
+
+        float2 ray = targetpos - camerapos;
+        float ray_length = length(ray);
+        float2 ray_normal = ray / ray_length;
+
+        unsigned int intercept = 0;
+
+        for (interid = 0; interid < ROBOTS_PER_WORLD; interid++)
+        {
+            interpos = world->robots[interid].transform.pos;
+
+            float2 v1 = interpos - camerapos;
+
+            float t = dot(v1, ray_normal);
+            float2 proj = (ray_normal * t) + camerapos;
+
+            intercept += ((t > 0) && (t < ray_length) &&
+                          (distance(proj, interpos) < ROBOT_BODY_RADIUS)) ? 1 : 0;
+        }
+
+        float target_angle = angle(ray_normal.y, ray_normal.x) - robot_angle;
+
+        robot->raycast_table[ROBOTS_PER_WORLD+targetid] = 0;
+
+        if ((fabs(target_angle) < (CAMERA_ANGLE/2)) && (ray_length < CAMERA_RADIUS) && (intercept == 0))
+        {
+            if (target_angle < 0)
+                robot->raycast_table[ROBOTS_PER_WORLD+targetid] |= 4;
+            else
+                robot->raycast_table[ROBOTS_PER_WORLD+targetid] |= 8;
+        }
+    }
 }
 
 #endif
