@@ -79,8 +79,7 @@ typedef struct {
     float actuators[NUM_ACTUATORS];
     float hidden[NUM_HIDDEN];
 
-    float dist_table[ROBOTS_PER_WORLD+2]; // +2 'cause target areas
-    char raycast_table[ROBOTS_PER_WORLD+2];
+    char raycast_table[ROBOTS_PER_WORLD+2]; // +2 'cause target areas
 } robot_t;
 
 typedef struct {
