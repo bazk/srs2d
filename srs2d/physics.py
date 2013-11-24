@@ -248,6 +248,10 @@ class Simulator(object):
                 actuators1=actuators_hist[0][world][rid][1],
                 actuators2=actuators_hist[0][world][rid][2],
                 actuators3=actuators_hist[0][world][rid][3],
+                camera0=sensors_hist[0][world][rid][8],
+                camera1=sensors_hist[0][world][rid][9],
+                camera2=sensors_hist[0][world][rid][10],
+                camera3=sensors_hist[0][world][rid][11],
                 hidden0=hidden_hist[0][world][rid][0],
                 hidden1=hidden_hist[0][world][rid][1],
                 hidden2=hidden_hist[0][world][rid][2])
