@@ -64,7 +64,6 @@ typedef struct {
 
 typedef struct {
     unsigned int id;
-    transform_t transform;
     transform_t previous_transform;
     float2 wheels_angular_speed;
     unsigned int front_led;

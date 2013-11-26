@@ -20,6 +20,8 @@
 #define NUM_ACTUATORS   4
 #define NUM_HIDDEN      3
 
+#define RANDF() ((float) rand() / (float) RAND_MAX)
+
 char params[ANN_PARAM_SIZE] = {
     0x66, 0x74, 0x13, 0x06, 0x25, 0x6f, 0x0b, 0xd5, 0x8c, 0xad, 0x8a, 0x7d,
     0x87, 0x63, 0x91, 0xd4, 0x98, 0x0d, 0x29, 0xef, 0x7e, 0xb9, 0x50, 0xf8,
@@ -50,7 +52,6 @@ typedef struct {
 
 typedef struct {
     cl_uint id;
-    transform_t transform;
     transform_t previous_transform;
     cl_float2 wheels_angular_speed;
     cl_int front_led;
@@ -64,6 +65,8 @@ typedef struct {
     cl_float sensors[NUM_SENSORS];
     cl_float actuators[NUM_ACTUATORS];
     cl_float hidden[NUM_HIDDEN];
+
+    cl_char raycast_table[ROBOTS_PER_WORLD+2];
 } robot_t;
 
 typedef struct {
@@ -82,9 +85,6 @@ typedef struct {
     cl_float arena_width;
 
     wall_t walls[4];
-
-    cl_float targets_distance;
-
     target_area_t target_areas[2];
 
     // ANN parameters
@@ -202,21 +202,35 @@ void execute(cl_device_id device, cl_context context, cl_command_queue queue)
     size_t length;
 
     size_t global_size[] = {NUM_WORLDS, ROBOTS_PER_WORLD};
-    size_t local_size[] = {6, ROBOTS_PER_WORLD};
+    size_t local_size[] = {1, ROBOTS_PER_WORLD};
 
     cl_uint ann_param_size = ANN_PARAM_SIZE;
     cl_float targets_distance = TARGETS_DISTANCE;
     cl_uint save = 0;
 
-    cl_uint seed = rand();
+    unsigned int i, j, k;
 
     char *param_list = (char*) malloc(NUM_WORLDS * ANN_PARAM_SIZE);
-    unsigned int i, j;
     for (i=0; i<NUM_WORLDS; i++)
     {
         for (j=0; j < ANN_PARAM_SIZE; j++)
         {
             param_list[(i*ANN_PARAM_SIZE)+j] = params[j];
+        }
+    }
+
+    cl_float4 *random_positions = (cl_float4*) malloc(NUM_WORLDS * ROBOTS_PER_WORLD * 10 * sizeof(cl_float4));
+    for (i=0; i<NUM_WORLDS; i++)
+    {
+        for (j=0; j < ROBOTS_PER_WORLD; j++)
+        {
+            for (k=0; k < 10; k++)
+            {
+                random_positions[i*(ROBOTS_PER_WORLD*10)+j*10+k].s0 = RANDF();
+                random_positions[i*(ROBOTS_PER_WORLD*10)+j*10+k].s1 = RANDF();
+                random_positions[i*(ROBOTS_PER_WORLD*10)+j*10+k].s2 = RANDF();
+                random_positions[i*(ROBOTS_PER_WORLD*10)+j*10+k].s3 = RANDF();
+            }
         }
     }
 
@@ -262,47 +276,35 @@ void execute(cl_device_id device, cl_context context, cl_command_queue queue)
     }
 
     // create buffers
-    cl_mem ranluxcl_buffer = clCreateBuffer(context, CL_MEM_READ_WRITE, 112 * NUM_WORLDS * ROBOTS_PER_WORLD, NULL, &err);
-    assert(err == CL_SUCCESS, err, "clCreateBuffer()");
-
     cl_mem worlds_buffer = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(world_t) * NUM_WORLDS, NULL, &err);
     assert(err == CL_SUCCESS, err, "clCreateBuffer()");
 
-    cl_mem param_buffer = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(cl_char) * ANN_PARAM_SIZE * NUM_WORLDS, NULL, &err);
+    cl_mem param_buffer = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(cl_char) * ANN_PARAM_SIZE * NUM_WORLDS, NULL, &err);
+    assert(err == CL_SUCCESS, err, "clCreateBuffer()");
+
+    cl_mem random_positions_buffer = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(cl_float4) * 10 * ROBOTS_PER_WORLD * NUM_WORLDS, NULL, &err);
     assert(err == CL_SUCCESS, err, "clCreateBuffer()");
 
     cl_mem fitness_buffer = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(cl_float) * NUM_WORLDS, NULL, &err);
     assert(err == CL_SUCCESS, err, "clCreateBuffer()");
 
-    // copy param_list to device
+    // copy host mem to buffers
     err = clEnqueueWriteBuffer(queue, param_buffer, CL_TRUE, 0, sizeof(cl_char) * ANN_PARAM_SIZE * NUM_WORLDS, param_list, 0, NULL, NULL);
     assert(err == CL_SUCCESS, err, "clEnqueueWriteBuffer()");
 
-    // execute init_ranluxcl kernel
-    kernel = clCreateKernel(program, "init_ranluxcl", &err);
-    assert(err == CL_SUCCESS, err, "clCreateKernel()");
-
-    err = CL_SUCCESS;
-    err |= clSetKernelArg(kernel, 0, sizeof(cl_uint), (void*) &seed);
-    err |= clSetKernelArg(kernel, 1, sizeof(cl_mem), (void*) &ranluxcl_buffer);
-    assert(err == CL_SUCCESS, err, "clSetKernelArg()");
-
-    err = clEnqueueNDRangeKernel(queue, kernel, 2, NULL, global_size, local_size, 0, NULL, NULL);
-    assert(err == CL_SUCCESS, err, "clEnqueueNDRangeKernel()");
-
-    err = clReleaseKernel(kernel);
-    assert(err == CL_SUCCESS, err, "clReleaseKernel()");
+    err = clEnqueueWriteBuffer(queue, random_positions_buffer, CL_TRUE, 0, sizeof(cl_float4) * 10 * ROBOTS_PER_WORLD * NUM_WORLDS, random_positions, 0, NULL, NULL);
+    assert(err == CL_SUCCESS, err, "clEnqueueWriteBuffer()");
 
     // execute simulate kernel
     kernel = clCreateKernel(program, "simulate", &err);
     assert(err == CL_SUCCESS, err, "clCreateKernel()");
 
     err = CL_SUCCESS;
-    err |= clSetKernelArg(kernel, 0, sizeof(cl_mem), (void*) &ranluxcl_buffer);
-    err |= clSetKernelArg(kernel, 1, sizeof(cl_mem), (void*) &worlds_buffer);
-    err |= clSetKernelArg(kernel, 2, sizeof(cl_float), (void*) &targets_distance);
-    err |= clSetKernelArg(kernel, 3, sizeof(cl_mem), (void*) &param_buffer);
-    err |= clSetKernelArg(kernel, 4, sizeof(cl_uint), (void*) &ann_param_size);
+    err |= clSetKernelArg(kernel, 0, sizeof(cl_mem), (void*) &worlds_buffer);
+    err |= clSetKernelArg(kernel, 1, sizeof(cl_float), (void*) &targets_distance);
+    err |= clSetKernelArg(kernel, 2, sizeof(cl_mem), (void*) &param_buffer);
+    err |= clSetKernelArg(kernel, 3, sizeof(cl_uint), (void*) &ann_param_size);
+    err |= clSetKernelArg(kernel, 4, sizeof(cl_mem), (void*) &random_positions_buffer);
     err |= clSetKernelArg(kernel, 5, sizeof(cl_mem), (void*) &fitness_buffer);
     err |= clSetKernelArg(kernel, 6, sizeof(cl_mem), NULL);
     err |= clSetKernelArg(kernel, 7, sizeof(cl_mem), NULL);
@@ -330,7 +332,6 @@ void execute(cl_device_id device, cl_context context, cl_command_queue queue)
         printf("fitness[%d] = %f\n", i, fitness[i]);
 
     err = CL_SUCCESS;
-    err |= clReleaseMemObject(ranluxcl_buffer);
     err |= clReleaseMemObject(worlds_buffer);
     err |= clReleaseMemObject(param_buffer);
     err |= clReleaseMemObject(fitness_buffer);

@@ -3,55 +3,44 @@
 
 #pragma OPENCL EXTENSION cl_amd_printf : enable
 
-#if defined(WORK_ITEMS_ARE_WORLDS) || defined(NO_LOCAL)
-    #define WORLD_MEM_SPACE __global
-#else
-    #define WORLD_MEM_SPACE __local
-#endif
-
 #include <defs.cl>
 #include <util.cl>
-
-#include <ranluxcl.cl>
 
 #include <motor_samples.cl>
 #include <ir_wall_samples.cl>
 #include <ir_round_samples.cl>
 
-void init_world(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, float targets_distance, __global unsigned char *params);
-void init_robot(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot);
-void set_random_position(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot);
-void step_actuators(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot);
-void step_sensors(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot);
-void step_collisions(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot);
-void step_controllers(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot);
-void fill_raycast_table(WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot);
+void init_world(__global world_t *world, __local transform_t *transforms, float targets_distance, __global unsigned char *params);
+void init_robot(__global world_t *world, __local transform_t *transforms, __global robot_t *robot);
+void set_random_position(__global world_t *world, __local transform_t *transforms, __global robot_t *robot, __global float4 *random_positions);
+void step_actuators(__global world_t *world, __local transform_t *transforms, __global robot_t *robot);
+void step_sensors(__global world_t *world, __local transform_t *transforms, __global robot_t *robot);
+void step_collisions(__global world_t *world, __local transform_t *transforms, __global robot_t *robot);
+void step_controllers(__global world_t *world, __local transform_t *transforms, __global robot_t *robot);
+void fill_raycast_table(__global world_t *world, __local transform_t *transforms, __global robot_t *robot);
 
-__kernel void init_ranluxcl(uint seed, __global ranluxcl_state_t *ranluxcltab)
-{
-    ranluxcl_initialization(seed, ranluxcltab);
-}
+__kernel
+__attribute__((reqd_work_group_size(WORLDS_PER_LOCAL, ROBOTS_PER_LOCAL, 1)))
+void simulate(__global world_t *worlds,
+              float targets_distance,
+              __global unsigned char *param_list,
+              unsigned int param_size,
+              __global float4 *random_positions,
 
-__kernel void simulate(__global ranluxcl_state_t *ranluxcltab,
-                       __global world_t *worlds,
-                       float targets_distance,
-                       __global unsigned char *param_list,
-                       unsigned int param_size,
-
-                       // return variables
-                       __global float *fitness,
-                       __global float *robot_radius,
-                       __global float2 *arena_size,
-                       __global float2 *target_areas_pos,
-                       __global float *target_areas_radius,
-                       __global float *fitness_hist,
-                       __global float *energy_hist,
-                       __global float4 *transform_hist,
-                       __global float *sensors_hist,
-                       __global float *actuators_hist,
-                       __global float *hidden_hist,
-                       unsigned int save_hist
-                       )
+              // return variables
+              __global float *fitness,
+              __global float *robot_radius,
+              __global float2 *arena_size,
+              __global float2 *target_areas_pos,
+              __global float *target_areas_radius,
+              __global float *fitness_hist,
+              __global float *energy_hist,
+              __global float4 *transform_hist,
+              __global float *sensors_hist,
+              __global float *actuators_hist,
+              __global float *hidden_hist,
+              unsigned int save_hist
+             )
 {
     __global unsigned char *params = param_list + (get_global_id(0)*param_size);
 
@@ -64,31 +53,42 @@ __kernel void simulate(__global ranluxcl_state_t *ranluxcltab,
     // max_trips = maximum number of trips a robot, at maximum speed, can perform during a simulation of TB time steps
     int max_trips = (int) floor( ((2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS) * TB * TIME_STEP) / targets_distance );
 
-#if defined(WORK_ITEMS_ARE_WORLDS) || defined(NO_LOCAL)
     __global world_t *world = &worlds[get_global_id(0)];
+    __global robot_t *robot = &world->robots[get_global_id(1)];
 
+    __local transform_t local_transforms[WORLDS_PER_LOCAL][ROBOTS_PER_WORLD];
+    __local transform_t *transforms = local_transforms[get_local_id(0)];
+
+#ifdef WORK_ITEMS_ARE_WORLDS
     world->id = get_global_id(0);
-    init_world(ranluxcltab, world, targets_distance, params);
+    init_world(world, transforms, targets_distance, params);
+
+    for (rid = 0; rid < ROBOTS_PER_WORLD; rid++)
+    {
+        world->robots[rid].id = rid;
+        init_robot(world, transforms, &world->robots[rid]);
+        set_random_position(world, transforms, &world->robots[rid], &random_positions[world->id * (ROBOTS_PER_WORLD * 10) + rid * 10]);
+    }
 
     while (cur < (TA + TB))
     {
         for (rid = 0; rid < ROBOTS_PER_WORLD; rid++)
-            step_actuators(ranluxcltab, world, &world->robots[rid]);
+            step_actuators(world, transforms, &world->robots[rid]);
 
         for (rid = 0; rid < ROBOTS_PER_WORLD; rid++)
-            step_sensors(ranluxcltab, world, &world->robots[rid]);
+            step_sensors(world, transforms, &world->robots[rid]);
 
         for (rid = 0; rid < ROBOTS_PER_WORLD; rid++)
-            step_collisions(ranluxcltab, world, &world->robots[rid]);
+            step_collisions(world, transforms, &world->robots[rid]);
 
         for (rid = 0; rid < ROBOTS_PER_WORLD; rid++)
-            step_controllers(ranluxcltab, world, &world->robots[rid]);
+            step_controllers(world, transforms, &world->robots[rid]);
 
         if (cur > TA)
         {
             for (rid = 0; rid < ROBOTS_PER_WORLD; rid++)
             {
-                WORLD_MEM_SPACE robot_t *robot = &world->robots[rid];
+                robot = &world->robots[rid];
 
                 robot->energy -= (fabs(robot->wheels_angular_speed.s0) + fabs(robot->wheels_angular_speed.s1)) /
                                                     (2 * k * WHEELS_MAX_ANGULAR_SPEED);
@@ -121,10 +121,10 @@ __kernel void simulate(__global ranluxcl_state_t *ranluxcltab,
             {
                 fitness_hist[idx+rid] = world->robots[rid].fitness;
                 energy_hist[idx+rid] = world->robots[rid].energy;
-                transform_hist[idx+rid].s0 = world->robots[rid].transform.pos.x;
-                transform_hist[idx+rid].s1 = world->robots[rid].transform.pos.y;
-                transform_hist[idx+rid].s2 = world->robots[rid].transform.rot.sin;
-                transform_hist[idx+rid].s3 = world->robots[rid].transform.rot.cos;
+                transform_hist[idx+rid].s0 = transforms[rid].pos.x;
+                transform_hist[idx+rid].s1 = transforms[rid].pos.y;
+                transform_hist[idx+rid].s2 = transforms[rid].rot.sin;
+                transform_hist[idx+rid].s3 = transforms[rid].rot.cos;
 
                 idx2 = cur * (NUM_WORLDS * ROBOTS_PER_WORLD * NUM_SENSORS) + world->id * (ROBOTS_PER_WORLD * NUM_SENSORS) + rid * NUM_SENSORS;
                 for (i=0; i<NUM_SENSORS; i++)
@@ -151,32 +151,35 @@ __kernel void simulate(__global ranluxcl_state_t *ranluxcltab,
     fitness[world->id] = avg_fitness / ROBOTS_PER_WORLD;
 
 #else
-    __local world_t local_worlds[WORLDS_PER_LOCAL];
 
-    __local world_t *world = &local_worlds[get_local_id(0)];
-    __local robot_t *robot = &world->robots[get_local_id(1)];
-
-    if (get_local_id(1) == 0)
+    if (get_global_id(1) == 0)
     {
         world->id = get_global_id(0);
-        init_world(ranluxcltab, world, targets_distance, params);
+        init_world(world, transforms, targets_distance, params);
+
+        for (rid = 0; rid < ROBOTS_PER_WORLD; rid++)
+        {
+            world->robots[rid].id = rid;
+            init_robot(world, transforms, &world->robots[rid]);
+            set_random_position(world, transforms, &world->robots[rid], &random_positions[world->id * (ROBOTS_PER_WORLD * 10) + rid * 10]);
+        }
     }
 
-    barrier(CLK_LOCAL_MEM_FENCE);
+    barrier(CLK_GLOBAL_MEM_FENCE);
 
     while (cur < (TA + TB))
     {
-        step_actuators(ranluxcltab, world, robot);
-        barrier(CLK_LOCAL_MEM_FENCE);
+        step_actuators(world, transforms, robot);
+        barrier(CLK_GLOBAL_MEM_FENCE);
 
-        step_sensors(ranluxcltab, world, robot);
-        barrier(CLK_LOCAL_MEM_FENCE);
+        step_sensors(world, transforms, robot);
+        barrier(CLK_GLOBAL_MEM_FENCE);
 
-        step_collisions(ranluxcltab, world, robot);
-        barrier(CLK_LOCAL_MEM_FENCE);
+        step_collisions(world, transforms, robot);
+        barrier(CLK_GLOBAL_MEM_FENCE);
 
-        step_controllers(ranluxcltab, world, robot);
-        barrier(CLK_LOCAL_MEM_FENCE);
+        step_controllers(world, transforms, robot);
+        barrier(CLK_GLOBAL_MEM_FENCE);
 
         if (cur > TA)
         {
@@ -211,10 +214,10 @@ __kernel void simulate(__global ranluxcl_state_t *ranluxcltab,
 
             fitness_hist[idx+robot->id] = robot->fitness;
             energy_hist[idx+robot->id] = robot->energy;
-            transform_hist[idx+robot->id].s0 = robot->transform.pos.x;
-            transform_hist[idx+robot->id].s1 = robot->transform.pos.y;
-            transform_hist[idx+robot->id].s2 = robot->transform.rot.sin;
-            transform_hist[idx+robot->id].s3 = robot->transform.rot.cos;
+            transform_hist[idx+robot->id].s0 = transforms[robot->id].pos.x;
+            transform_hist[idx+robot->id].s1 = transforms[robot->id].pos.y;
+            transform_hist[idx+robot->id].s2 = transforms[robot->id].rot.sin;
+            transform_hist[idx+robot->id].s3 = transforms[robot->id].rot.cos;
 
             idx2 = cur * (NUM_WORLDS * ROBOTS_PER_WORLD * NUM_SENSORS) + world->id * (ROBOTS_PER_WORLD * NUM_SENSORS) + robot->id * NUM_SENSORS;
             for (i=0; i<NUM_SENSORS; i++)
@@ -232,9 +235,9 @@ __kernel void simulate(__global ranluxcl_state_t *ranluxcltab,
         cur++;
     }
 
-    barrier(CLK_LOCAL_MEM_FENCE);
+    barrier(CLK_GLOBAL_MEM_FENCE);
 
-    if (get_local_id(1) == 0)
+    if (get_global_id(1) == 0)
     {
         float avg_fitness = 0;
 
@@ -246,19 +249,14 @@ __kernel void simulate(__global ranluxcl_state_t *ranluxcltab,
 #endif
 }
 
-void init_world(__global ranluxcl_state_t *ranluxcltab,
-                WORLD_MEM_SPACE world_t *world,
+void init_world(__global world_t *world,
+                __local transform_t *transforms,
                 float targets_distance,
                 __global unsigned char *params)
 {
     // walls
-    ranluxcl_state_t ranluxclstate;
-    ranluxcl_download_seed(&ranluxclstate, ranluxcltab);
-    float4 random = ranluxcl32(&ranluxclstate);
-    ranluxcl_upload_seed(&ranluxclstate, ranluxcltab);
-
     world->arena_height = ARENA_HEIGHT;
-    world->arena_width = ARENA_WIDTH_MIN + random.s0 * (ARENA_WIDTH_MAX - ARENA_WIDTH_MIN);
+    world->arena_width = ARENA_WIDTH_MIN + (get_global_id(0) / NUM_WORLDS) * (ARENA_WIDTH_MAX - ARENA_WIDTH_MIN);
 
     world->walls[0].p1.x = world->arena_width / 2;
     world->walls[0].p1.y = -world->arena_height / 2;
@@ -308,16 +306,9 @@ void init_world(__global ranluxcl_state_t *ranluxcltab,
         world->bias_hidden[i] = decode_param(params[p++], BIAS_BOUNDARY_L, BIAS_BOUNDARY_H);
         world->timec_hidden[i] = decode_param(params[p++], TIMEC_BOUNDARY_L, TIMEC_BOUNDARY_H);
     }
-
-    unsigned int rid;
-    for (rid = 0; rid < ROBOTS_PER_WORLD; rid++)
-    {
-        world->robots[rid].id = rid;
-        init_robot(ranluxcltab, world, &world->robots[rid]);
-    }
 }
 
-void init_robot(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot)
+void init_robot(__global world_t *world, __local transform_t *transforms, __global robot_t *robot)
 {
     unsigned int i;
 
@@ -330,7 +321,6 @@ void init_robot(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t 
     robot->fitness = 0;
     robot->last_target_area = -1;
     robot->entered_new_target_area = 0;
-    set_random_position(ranluxcltab, world, robot);
 
     for (i=0; i<NUM_SENSORS; i++)
         robot->sensors[i] = 0;
@@ -343,47 +333,44 @@ void init_robot(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t 
 
 #ifdef TEST
     if (robot->id == 0) {
-        robot->transform.pos.x = 0;
-        robot->transform.pos.y = 0;
-        robot->transform.rot.sin = 0;
-        robot->transform.rot.cos = 1;
+        transforms[robot->id].pos.x = 0;
+        transforms[robot->id].pos.y = 0;
+        transforms[robot->id].rot.sin = 0;
+        transforms[robot->id].rot.cos = 1;
     }
     else if (robot->id == 1) {
-        robot->transform.pos.x = 0.073;
-        robot->transform.pos.y = 0;
-        robot->transform.rot.sin = 1;
-        robot->transform.rot.cos = 0;
+        transforms[robot->id].pos.x = 0.073;
+        transforms[robot->id].pos.y = 0;
+        transforms[robot->id].rot.sin = 1;
+        transforms[robot->id].rot.cos = 0;
     }
 
-    robot->previous_transform.pos.x = robot->transform.pos.x;
-    robot->previous_transform.pos.y = robot->transform.pos.y;
-    robot->previous_transform.rot.sin = robot->transform.rot.sin;
-    robot->previous_transform.rot.cos = robot->transform.rot.cos;
+    robot->previous_transform.pos.x = transforms[robot->id].pos.x;
+    robot->previous_transform.pos.y = transforms[robot->id].pos.y;
+    robot->previous_transform.rot.sin = transforms[robot->id].rot.sin;
+    robot->previous_transform.rot.cos = transforms[robot->id].rot.cos;
 #endif
 }
 
-void set_random_position(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot)
+void set_random_position(__global world_t *world, __local transform_t *transforms, __global robot_t *robot, __global float4 *random_positions)
 {
-    int otherid, i, collision = 1;
+    int otherid, i, collision = 1, offset = 0;
 
-    ranluxcl_state_t ranluxclstate;
-    ranluxcl_download_seed(&ranluxclstate, ranluxcltab);
-
-    while (collision == 1)
+    while ((collision == 1) && (offset < 10))
     {
-        float4 random = ranluxcl32(&ranluxclstate);
+        float4 random = random_positions[offset++];
 
         float max_x = (world->arena_width / 2) - ROBOT_BODY_RADIUS;
         float max_y = (world->arena_height / 2) - ROBOT_BODY_RADIUS;
-        robot->transform.pos.x = (random.s0 * 2 * max_x) - max_x;
-        robot->transform.pos.y = (random.s1 * 2 * max_y) - max_y;
-        robot->transform.rot.sin = random.s2 * 2 - 1;
-        robot->transform.rot.cos = random.s3 * 2 - 1;
+        transforms[robot->id].pos.x = (random.s0 * 2 * max_x) - max_x;
+        transforms[robot->id].pos.y = (random.s1 * 2 * max_y) - max_y;
+        transforms[robot->id].rot.sin = random.s2 * 2 - 1;
+        transforms[robot->id].rot.cos = random.s3 * 2 - 1;
 
-        robot->previous_transform.pos.x = robot->transform.pos.x;
-        robot->previous_transform.pos.y = robot->transform.pos.y;
-        robot->previous_transform.rot.sin = robot->transform.rot.sin;
-        robot->previous_transform.rot.cos = robot->transform.rot.cos;
+        robot->previous_transform.pos.x = transforms[robot->id].pos.x;
+        robot->previous_transform.pos.y = transforms[robot->id].pos.y;
+        robot->previous_transform.rot.sin = transforms[robot->id].rot.sin;
+        robot->previous_transform.rot.cos = transforms[robot->id].rot.cos;
 
         collision = 0;
 
@@ -392,7 +379,7 @@ void set_random_position(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE
         {
             if (robot->id != world->robots[otherid].id)
             {
-                float dist = distance(robot->transform.pos, world->robots[otherid].transform.pos);
+                float dist = distance(transforms[robot->id].pos, transforms[otherid].pos);
 
                 if (dist < 2*ROBOT_BODY_RADIUS)
                 {
@@ -405,7 +392,7 @@ void set_random_position(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE
         // check for "collision" with target areas
         for (i = 0; i < 2; i++)
         {
-            float dist = distance(robot->transform.pos, world->target_areas[i].center);
+            float dist = distance(transforms[robot->id].pos, world->target_areas[i].center);
 
             if (dist < world->target_areas[i].radius)
             {
@@ -414,16 +401,14 @@ void set_random_position(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE
             }
         }
     }
-
-    ranluxcl_upload_seed(&ranluxclstate, ranluxcltab);
 }
 
-void step_actuators(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot)
+void step_actuators(__global world_t *world, __local transform_t *transforms, __global robot_t *robot)
 {
-    robot->previous_transform.pos.x = robot->transform.pos.x;
-    robot->previous_transform.pos.y = robot->transform.pos.y;
-    robot->previous_transform.rot.sin = robot->transform.rot.sin;
-    robot->previous_transform.rot.cos = robot->transform.rot.cos;
+    robot->previous_transform.pos.x = transforms[robot->id].pos.x;
+    robot->previous_transform.pos.y = transforms[robot->id].pos.y;
+    robot->previous_transform.rot.sin = transforms[robot->id].rot.sin;
+    robot->previous_transform.rot.cos = transforms[robot->id].rot.cos;
 
     robot->front_led = (robot->actuators[OUT_front_led] > 0.5) ? 1 : 0;
     robot->rear_led = (robot->actuators[OUT_rear_led] > 0.5) ? 1 : 0;
@@ -434,29 +419,29 @@ void step_actuators(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE worl
     int v1 = round(robot->actuators[OUT_wheels1] * (MOTOR_SAMPLE_COUNT - 1));
     int v2 = round(robot->actuators[OUT_wheels0] * (MOTOR_SAMPLE_COUNT - 1));
 
-    robot->transform.pos.x += MOTOR_LINEAR_SPEED_SAMPLES[v1][v2] * robot->transform.rot.cos * TIME_STEP;
-    robot->transform.pos.y += MOTOR_LINEAR_SPEED_SAMPLES[v1][v2] * robot->transform.rot.sin * TIME_STEP;
+    transforms[robot->id].pos.x += MOTOR_LINEAR_SPEED_SAMPLES[v1][v2] * transforms[robot->id].rot.cos * TIME_STEP;
+    transforms[robot->id].pos.y += MOTOR_LINEAR_SPEED_SAMPLES[v1][v2] * transforms[robot->id].rot.sin * TIME_STEP;
 
-    float angle_robot = angle(robot->transform.rot.sin, robot->transform.rot.cos);
+    float angle_robot = angle(transforms[robot->id].rot.sin, transforms[robot->id].rot.cos);
     angle_robot += MOTOR_ANGULAR_SPEED_SAMPLES[v1][v2] * TIME_STEP;
-    robot->transform.rot.sin = sin(angle_robot);
-    robot->transform.rot.cos = cos(angle_robot);
+    transforms[robot->id].rot.sin = sin(angle_robot);
+    transforms[robot->id].rot.cos = cos(angle_robot);
 }
 
-void step_sensors(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot)
+void step_sensors(__global world_t *world, __local transform_t *transforms, __global robot_t *robot)
 {
     unsigned int i, j, otherid;
-    WORLD_MEM_SPACE robot_t *other;
+    __global robot_t *other;
 
-    float2 pos = { robot->transform.pos.x,
-                   robot->transform.pos.y };
+    float2 pos = { transforms[robot->id].pos.x,
+                   transforms[robot->id].pos.y };
 
     for (i=0; i<NUM_SENSORS; i++)
         robot->sensors[i] = 0;
 
     robot->entered_new_target_area = 0;
 
-    fill_raycast_table(world, robot);
+    fill_raycast_table(world, transforms, robot);
 
     if ( ((pos.x+(ROBOT_BODY_RADIUS+IR_WALL_DIST_MAX)) > (world->arena_width/2)) ||
          ((pos.x-(ROBOT_BODY_RADIUS+IR_WALL_DIST_MAX)) < (-world->arena_width/2)) ||
@@ -508,7 +493,7 @@ void step_sensors(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_
                     else
                         wall_angle = 0;
 
-                float diff_angle = angle_rot(robot->transform.rot) - wall_angle;
+                float diff_angle = angle_rot(transforms[robot->id].rot) - wall_angle;
 
                 if (diff_angle >= (2*M_PI))
                     diff_angle -= 2*M_PI;
@@ -527,7 +512,7 @@ void step_sensors(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_
     {
         other = &world->robots[otherid];
 
-        float dist = distance(robot->transform.pos, other->transform.pos);
+        float dist = distance(transforms[robot->id].pos, transforms[other->id].pos);
 
         if (robot->id == other->id)
             continue;
@@ -538,27 +523,28 @@ void step_sensors(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_
         // IR against other robots
         float d = dist - 2*ROBOT_BODY_RADIUS;
 
-        int dist_idx;
-        if (d <= IR_ROUND_DIST_MIN)
-            dist_idx = 0;
-        else if (d >= IR_ROUND_DIST_MAX)
-            dist_idx = IR_ROUND_DIST_COUNT-1;
-        else
-            dist_idx = (int) floor((d - IR_ROUND_DIST_MIN) / IR_ROUND_DIST_INTERVAL);
+        if (d < IR_ROUND_DIST_MAX)
+        {
+            int dist_idx;
+            if (d <= IR_ROUND_DIST_MIN)
+                dist_idx = 0;
+            else
+                dist_idx = (int) floor((d - IR_ROUND_DIST_MIN) / IR_ROUND_DIST_INTERVAL);
 
-        float s = other->transform.pos.y - robot->transform.pos.y;
-        float c = other->transform.pos.x - robot->transform.pos.x;
-        float diff_angle = angle_rot(robot->transform.rot) - angle(s, c);
+            float s = transforms[other->id].pos.y - transforms[robot->id].pos.y;
+            float c = transforms[other->id].pos.x - transforms[robot->id].pos.x;
+            float diff_angle = angle_rot(transforms[robot->id].rot) - angle(s, c);
 
-        if (diff_angle >= (2*M_PI))
-            diff_angle -= 2*M_PI;
-        else if (diff_angle < 0)
-            diff_angle += 2*M_PI;
+            if (diff_angle >= (2*M_PI))
+                diff_angle -= 2*M_PI;
+            else if (diff_angle < 0)
+                diff_angle += 2*M_PI;
 
-        int angle_idx = (int) floor(diff_angle / ((2*M_PI) / IR_ROUND_ANGLE_COUNT));
+            int angle_idx = (int) floor(diff_angle / ((2*M_PI) / IR_ROUND_ANGLE_COUNT));
 
-        for (j = 0; j < 8; j++)
-            robot->sensors[j] += IR_ROUND_SAMPLES[dist_idx][angle_idx][j] / 1024.0f;
+            for (j = 0; j < 8; j++)
+                robot->sensors[j] += IR_ROUND_SAMPLES[dist_idx][angle_idx][j] / 1024.0f;
+        }
 
         // camera
         if ( (other->front_led == 1) && ((robot->raycast_table[other->id] & 1) != 0) )
@@ -576,7 +562,7 @@ void step_sensors(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_
 
     for (i = 0; i < 2; i++)
     {
-        float dist = distance(robot->transform.pos, world->target_areas[i].center);
+        float dist = distance(transforms[robot->id].pos, world->target_areas[i].center);
 
         // ground sensor
         if (dist < world->target_areas[i].radius)
@@ -606,23 +592,23 @@ void step_sensors(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_
     }
 }
 
-void step_collisions(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot)
+void step_collisions(__global world_t *world, __local transform_t *transforms, __global robot_t *robot)
 {
     if (robot->collision != 0)
     {
         robot->collision = 0;
 
-        robot->transform.pos.x = robot->previous_transform.pos.x;
-        robot->transform.pos.y = robot->previous_transform.pos.y;
-        robot->transform.rot.sin = robot->previous_transform.rot.sin;
-        robot->transform.rot.cos = robot->previous_transform.rot.cos;
+        transforms[robot->id].pos.x = robot->previous_transform.pos.x;
+        transforms[robot->id].pos.y = robot->previous_transform.pos.y;
+        transforms[robot->id].rot.sin = robot->previous_transform.rot.sin;
+        transforms[robot->id].rot.cos = robot->previous_transform.rot.cos;
 
         robot->wheels_angular_speed.s0 = 0;
         robot->wheels_angular_speed.s1 = 0;
     }
 }
 
-void step_controllers(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot)
+void step_controllers(__global world_t *world, __local transform_t *transforms, __global robot_t *robot)
 {
     unsigned int s,h,a;
     float aux;
@@ -670,25 +656,25 @@ void step_controllers(__global ranluxcl_state_t *ranluxcltab, WORLD_MEM_SPACE wo
 #endif
 }
 
-void fill_raycast_table(WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t *robot)
+void fill_raycast_table(__global world_t *world, __local transform_t *transforms, __global robot_t *robot)
 {
     unsigned int otherid, interid, targetid;
     float2 interpos, targetpos;
 
-    float2 front = {ROBOT_BODY_RADIUS, 0};
-    float2 rear = {-ROBOT_BODY_RADIUS, 0};
+    float2 front = {ROBOT_BODY_RADIUS+0.005, 0};
+    float2 rear = {-ROBOT_BODY_RADIUS-0.005, 0};
 
-    float2 camerapos = transform_mul_vec(robot->transform, front);
+    float2 camerapos = transform_mul_vec(transforms[robot->id], front);
 
-    float robot_angle = angle_rot(robot->transform.rot);
+    float robot_angle = angle_rot(transforms[robot->id].rot);
 
     for (otherid = 0; otherid < ROBOTS_PER_WORLD; otherid++)
     {
-        float2 front_ray = transform_mul_vec(world->robots[otherid].transform, front) - camerapos;
+        float2 front_ray = transform_mul_vec(transforms[otherid], front) - camerapos;
         float front_ray_length = length(front_ray);
         float2 front_ray_normal = front_ray / front_ray_length;
 
-        float2 rear_ray = transform_mul_vec(world->robots[otherid].transform, rear) - camerapos;
+        float2 rear_ray = transform_mul_vec(transforms[otherid], rear) - camerapos;
         float rear_ray_length = length(rear_ray);
         float2 rear_ray_normal = rear_ray / rear_ray_length;
 
@@ -696,7 +682,7 @@ void fill_raycast_table(WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t 
 
         for (interid = 0; interid < ROBOTS_PER_WORLD; interid++)
         {
-            interpos = world->robots[interid].transform.pos;
+            interpos = transforms[interid].pos;
 
             float2 v1 = interpos - camerapos;
 
@@ -747,7 +733,7 @@ void fill_raycast_table(WORLD_MEM_SPACE world_t *world, WORLD_MEM_SPACE robot_t 
 
         for (interid = 0; interid < ROBOTS_PER_WORLD; interid++)
         {
-            interpos = world->robots[interid].transform.pos;
+            interpos = transforms[interid].pos;
 
             float2 v1 = interpos - camerapos;
 

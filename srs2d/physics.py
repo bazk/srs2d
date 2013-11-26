@@ -38,7 +38,7 @@ NUM_HIDDEN = 3
 __dir__ = os.path.dirname(__file__)
 
 class Simulator(object):
-    def __init__(self, context, queue, num_worlds=1, num_robots=9, ta=600, tb=5400, time_step=1/10.0, no_local=False, test=False):
+    def __init__(self, context, queue, num_worlds=1, num_robots=9, ta=600, tb=5400, time_step=1/10.0, test=False):
         global NUM_INPUTS, NUM_OUTPUTS
 
         self.context = context
@@ -53,29 +53,18 @@ class Simulator(object):
         self.sizeof_world_t = self.__query_sizeof_world_t(context, queue, num_robots)
 
         # estimate how many work items can be executed in parallel in each work group
-        self.work_group_size = pyopencl.characterize.get_simd_group_size(self.queue.device, self.sizeof_world_t)
+        # self.work_group_size = pyopencl.characterize.get_simd_group_size(self.queue.device, self.sizeof_world_t)
+        self.work_group_size = self.queue.device.max_work_group_size
 
-        if self.work_group_size >= num_robots:
-            self.global_size = (num_worlds, num_robots)
-
-            # manually defining the local size ensuring that all the robots from
-            # the same world will be executed on the same work group (avoiding
-            # concurrency problems)
-            d1 = self.work_group_size / num_robots
-            if (d1 > num_worlds):
-                d1 = num_worlds
-            self.local_size = (d1, num_robots)
-
-            self.work_items_are_worlds = False
+        if self.work_group_size < num_robots:
+            self.work_items_are_worlds = True
+            self.global_size = (self.num_worlds,1)
+            self.local_size = (1,1)
 
         else:
-            self.global_size = (self.num_worlds,)
-
-            # let opencl decide which local size is best (no concurrency
-            # problems here)
-            self.local_size = None
-
-            self.work_items_are_worlds = True
+            self.work_items_are_worlds = False
+            self.global_size = (self.num_worlds,self.num_robots)
+            self.local_size = (1,self.num_robots)
 
         options = [
             '-I"%s"' % os.path.join(__dir__, 'kernels/'),
@@ -83,33 +72,22 @@ class Simulator(object):
             '-DROBOTS_PER_WORLD=%d' % num_robots,
             '-DTIME_STEP=%f' % time_step,
             '-DTA=%d' % ta,
-            '-DTB=%d' % tb
+            '-DTB=%d' % tb,
+            '-DWORLDS_PER_LOCAL=%d' % self.local_size[0],
+            '-DROBOTS_PER_LOCAL=%d' % self.local_size[1]
         ]
 
         if (test):
             options.append('-DTEST')
 
-        if (no_local):
-            options.append('-DNO_LOCAL')
-
         if (self.work_items_are_worlds):
             options.append('-DWORK_ITEMS_ARE_WORLDS')
-        else:
-            options.append('-DWORLDS_PER_LOCAL=%d' % self.local_size[0])
-            options.append('-DROBOTS_PER_LOCAL=%d' % self.local_size[1])
 
         src = open(os.path.join(__dir__, 'kernels/physics.cl'), 'r')
         self.prg = cl.Program(context, src.read()).build(options=' '.join(options))
 
-        # initialize random number generator
-        self.ranluxcl = cl.Buffer(context, 0, num_worlds * num_robots * 112)
-        init_ranluxcl = self.prg.init_ranluxcl
-        init_ranluxcl.set_scalar_arg_dtypes((np.uint32, None))
-        init_ranluxcl(queue, self.global_size, self.local_size, random.randint(0, 4294967295), self.ranluxcl).wait()
-
-        # create and initialize worlds
+        # create worlds buffer
         self.worlds = cl.Buffer(context, 0, num_worlds * self.sizeof_world_t)
-        # self.init_worlds(0.7)
 
     def __query_sizeof_world_t(self, context, queue, num_robots):
         src = '''
@@ -137,6 +115,9 @@ class Simulator(object):
         param = np.chararray(len(param_list), len(param_list[0]))
         param[:] = param_list
         param_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=param)
+
+        random_positions = np.random.rand(self.num_worlds, self.num_robots, 10, 4).astype(np.float32)
+        random_positions_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=random_positions)
 
         fitness_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(4 * self.num_worlds))
 
@@ -166,8 +147,9 @@ class Simulator(object):
             hidden_hist_buf = None
 
         simulate = self.prg.simulate
-        simulate.set_scalar_arg_dtypes((None, None, np.float32,
+        simulate.set_scalar_arg_dtypes((None, np.float32,
                                         None, np.uint32,
+                                        None,
                                         None,
                                         None, None,
                                         None, None,
@@ -175,8 +157,9 @@ class Simulator(object):
                                         None, None, None,
                                         np.uint32))
         simulate(self.queue, self.global_size, self.local_size,
-                 self.ranluxcl, self.worlds, targets_distance,
+                 self.worlds, targets_distance,
                  param_buf, len(param_list[0]),
+                 random_positions_buf,
                  fitness_buf,
                  robot_radius_buf, arena_size_buf,
                  target_areas_pos_buf, target_areas_radius_buf,
