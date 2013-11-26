@@ -29,6 +29,11 @@ import solace
 import io
 import png
 import subprocess
+import numpy as np
+import math
+import tempfile
+
+ANN_PARAMS_SIZE = 113
 
 logging.basicConfig(format='[ %(asctime)s ] [%(levelname)s] %(message)s')
 __log__ = logging.getLogger(__name__)
@@ -38,7 +43,6 @@ def main():
     parser.add_argument("-v", "--verbosity",        help="increase output verbosity", action="count")
     parser.add_argument("-q", "--quiet",            help="supress output (except errors)", action="store_true")
     parser.add_argument("--no-save",                help="skip saving best fitness simulation", action="store_true")
-    parser.add_argument("--image",                  help="generate and upload an image representing current particle population", action="store_true")
     parser.add_argument("-w", "--inertia",          help="set PSO inertia (W) parameter, default is 0.9", type=float, default=0.9)
     parser.add_argument("-a", "--alfa",             help="set PSO alfa parameter, default is 2.0", type=float, default=2)
     parser.add_argument("-b", "--beta",             help="set PSO beta parameter, default is 2.0", type=float, default=2)
@@ -108,7 +112,7 @@ class PSO(object):
         self.gbest = None
         self.gbest_fitness = None
 
-        self.particles = [ Particle(args.inertia, args.alfa, args.beta) for i in range(args.population_size) ]
+        self.particles = [ Particle(ANN_PARAMS_SIZE, args.inertia, args.alfa, args.beta) for i in range(args.population_size) ]
 
         self.simulator = physics.Simulator(self.context, self.queue,
                                            num_worlds=args.population_size,
@@ -116,7 +120,6 @@ class PSO(object):
                                            ta=args.ta, tb=args.tb)
 
         generation = 1
-
         while (generation <= args.num_generations):
             __log__.info('[gen=%d] Evaluating particles...', generation)
             self.evaluate(args.distances, args.trials)
@@ -135,108 +138,50 @@ class PSO(object):
                 p.gbest = self.gbest
                 p.update_pos_vel()
 
-            __log__.info('[gen=%d] Particles updated, current gbest: %s', generation, str(self.gbest))
+            avg_pbest = 0
+            for p in self.particles:
+                avg_pbest += p.pbest.fitness
+            avg_pbest /= len(self.particles)
 
-            if new_gbest:
-                run.progress(generation / float(args.num_generations), {
-                    'generation': generation,
-                    'gbest_fitness': self.gbest.fitness,
-                    'gbest_position': self.gbest.position.to_dict()
-                })
+            __log__.info('[gen=%d] Particles updated, avg(pbest fitness) = %.5f, gbest fitness: %.5f', generation, avg_pbest, self.gbest.fitness)
 
-                if not args.no_save:
-                    __log__.info('[gen=%d] Saving simulation for the new found gbest...', generation)
-                    fit = self.simulate_and_save('/tmp/simulation.srs', self.gbest.position, args.ta, args.tb,
-                        args.num_robots, args.distances[ random.randint(0, len(args.distances)-1) ])
+            run.progress(generation / float(args.num_generations), {
+                'generation': generation,
+                'avg_pbest_fitness': avg_pbest,
+                'gbest_fitness': self.gbest.fitness,
+                'gbest_position': self.gbest.position_hex
+            })
 
-                    run.upload('/tmp/simulation.srs', 'run-%02d-new-gbest-gen-%04d-fit-%.5f.srs' % (run.id, generation, fit))
-                    os.remove('/tmp/simulation.srs')
+            if new_gbest and (not args.no_save):
+                __log__.info('[gen=%d] Saving simulation for the new found gbest...', generation)
+                _, filename = tempfile.mkstemp(prefix='pso_sim_', suffix='.srs')
 
-            else:
-                run.progress(generation / float(args.num_generations), {'generation': generation})
+                fitness = self.simulator.simulate_and_save(
+                    args.distances[ random.randint(0, len(args.distances)-1) ],
+                    [ self.gbest.position for i in xrange(len(self.particles)) ],
+                    filename
+                )
 
-            if args.image:
-                self.generate_image('/tmp/image.png')
-                run.upload('/tmp/image.png', 'image-run-%02d-gen-%04d.png' % (run.id, generation))
-                os.remove('/tmp/image.png')
+                run.upload(filename, 'run-%02d-new-gbest-gen-%04d-fit-%.4f.srs' % (run.id, generation, fitness[0]) )
+                os.remove(filename)
 
             generation += 1
 
         run.done()
 
     def evaluate(self, distances, trials):
-        self.simulator.set_ann_parameters([ p.position.encoded for p in self.particles ])
-
-        for p in range(len(self.particles)):
-            self.particles[p].fitness = 0.0
+        for p in self.particles:
+            p.fitness = 0.0
 
         for d in distances:
-            for i in range(trials):
-                self.simulator.init_worlds(d)
-                self.simulator.simulate()
+            for t in range(trials):
+                fitness = self.simulator.simulate(d, [ p.position for p in self.particles ])
 
-                fit = self.simulator.get_fitness()
-                for p in range(len(self.particles)):
-                    self.particles[p].fitness += fit[p]
+                for i in xrange(len(self.particles)):
+                    self.particles[i].fitness += fitness[i]
 
-        for p in range(len(self.particles)):
-            self.particles[p].fitness /= len(distances) * trials
-
-    def simulate_and_save(self, filename, pos, ta, tb, num_robots, distance):
-        simulator = physics.Simulator(self.context, self.queue,
-                                      num_worlds=1,
-                                      num_robots=num_robots,
-                                      ta=ta, tb=tb)
-
-        save = io.SaveFile.new(filename, step_rate=1/float(simulator.time_step))
-
-        simulator.init_worlds(distance)
-        simulator.set_ann_parameters([ pos ])
-
-        arena, target_areas, target_areas_radius = simulator.get_world_transforms()
-        save.add_object('arena', io.SHAPE_RECTANGLE, x=0.0, y=0.0, width=arena[0][0], height=arena[0][1])
-        save.add_object('target0', io.SHAPE_CIRCLE, x=target_areas[0][0], y=target_areas[0][1], radius=target_areas_radius[0][0], sin=0.0, cos=0.1)
-        save.add_object('target1', io.SHAPE_CIRCLE, x=target_areas[0][2], y=target_areas[0][3], radius=target_areas_radius[0][1], sin=0.0, cos=0.1)
-
-        fitene = simulator.get_individual_fitness_energy()
-        sensors, actuators, hidden = simulator.get_ann_state()
-        transforms, radius = simulator.get_transforms()
-        robot_radius = radius[0][0]
-
-        robot_obj = [ None for i in range(len(transforms)) ]
-        for i in range(len(transforms)):
-            robot_obj[i] = save.add_object('robot'+str(i), io.SHAPE_CIRCLE,
-                x=transforms[i][0], y=transforms[i][1], radius=robot_radius,
-                sin=transforms[i][2], cos=transforms[i][3],
-                fitness=fitene[i][0], energy=fitene[i][1],
-                sensors=sensors[i],
-                wheels0=actuators[i][0], wheels1=actuators[i][1],
-                front_led=actuators[i][2], rear_led=actuators[i][3],
-                hidden0=hidden[i][0], hidden1=hidden[i][1], hidden2=hidden[i][2])
-
-        current_step = 0
-        while current_step < (ta + tb):
-            simulator.step(current_step)
-
-            fitene = simulator.get_individual_fitness_energy()
-            sensors, actuators, hidden = simulator.get_ann_state()
-            transforms, radius = simulator.get_transforms()
-            for i in range(len(transforms)):
-                robot_obj[i].update(
-                    x=transforms[i][0], y=transforms[i][1],
-                    sin=transforms[i][2], cos=transforms[i][3],
-                    fitness=fitene[i][0], energy=fitene[i][1],
-                    sensors=sensors[i],
-                    wheels0=actuators[i][0], wheels1=actuators[i][1],
-                    front_led=actuators[i][2], rear_led=actuators[i][3],
-                    hidden0=hidden[i][0], hidden1=hidden[i][1], hidden2=hidden[i][2])
-
-            save.frame()
-            current_step += 1
-
-        save.close()
-
-        return simulator.get_fitness()[0]
+        for p in self.particles:
+            p.fitness /= len(distances) * trials
 
     def generate_image(self, filename, block_width=8, block_height=8):
         blocks = [ [] for p in xrange(len(self.particles)) ]
@@ -244,27 +189,9 @@ class PSO(object):
 
         for p in xrange(len(self.particles)):
             pos = self.particles[p].position
-            w = pos.to_dict()
 
-            for v in w['weights']:
-                f = (v - pos.weights_boundary[0]) / (pos.weights_boundary[1] - pos.weights_boundary[0])
-                blocks[p].append(int(255 * f))
-
-            for v in w['bias']:
-                f = (v - pos.bias_boundary[0]) / (pos.bias_boundary[1] - pos.bias_boundary[0])
-                blocks[p].append(int(255 * f))
-
-            for v in w['weights_hidden']:
-                f = (v - pos.weights_boundary[0]) / (pos.weights_boundary[1] - pos.weights_boundary[0])
-                blocks[p].append(int(255 * f))
-
-            for v in w['bias_hidden']:
-                f = (v - pos.bias_boundary[0]) / (pos.bias_boundary[1] - pos.bias_boundary[0])
-                blocks[p].append(int(255 * f))
-
-            for v in w['timec_hidden']:
-                f = (v - pos.timec_boundary[0]) / (pos.timec_boundary[1] - pos.timec_boundary[0])
-                blocks[p].append(int(255 * f))
+            for c in pos:
+                blocks[p].append(ord(c))
 
         for i in xrange(len(blocks[0])):
             line = []
@@ -278,28 +205,41 @@ class PSO(object):
         png.from_array(pixels, 'L').save(filename)
 
 class Particle(object):
-    def __init__(self, inertia=0.9, alfa=2.0, beta=2.0):
+    MAX_VEL = 6
+
+    def __init__(self, size, inertia=0.9, alfa=2.0, beta=2.0):
         self.id = id(self)
+
+        self.fitness = 0
 
         self.inertia = inertia
         self.alfa = alfa
         self.beta = beta
 
-        self.position = physics.ANNParametersArray(True)
-        self.velocity = physics.ANNParametersArray(True)
-        self.fitness = 0.0
+        self.position = ''
+        for i in xrange(size):
+            self.position += chr(random.randint(0,255))
+
+        self.velocity = np.random.uniform(-self.MAX_VEL, self.MAX_VEL, size*8)
 
         self.pbest = None
         self.gbest = None
 
-    def __str__(self):
+    def __repr__(self):
         return 'Particle(%d, fitness=%.5f)' % (self.id, self.fitness)
 
+    @property
+    def position_hex(self):
+        ret = ''
+        for c in self.position:
+            ret += c.encode('hex')
+        return ret
+
     def copy(self):
-        p = Particle(self.inertia, self.alfa, self.beta)
-        p.position = self.position.copy()
-        p.velocity = self.velocity.copy()
+        p = Particle(len(self.position), self.inertia, self.alfa, self.beta)
         p.fitness = self.fitness
+        p.position = self.position
+        p.velocity = np.copy(self.velocity)
         p.pbest = self.pbest
         p.gbest = self.gbest
         return p
@@ -309,11 +249,49 @@ class Particle(object):
             self.pbest = self.copy()
 
     def update_pos_vel(self):
-        self.velocity = self.inertia * self.velocity + \
-                        self.alfa * random.uniform(0, 1.0) * (self.pbest.position - self.position) + \
-                        self.beta * random.uniform(0, 1.0) * (self.gbest.position - self.position)
+        new_pos = ''
 
-        self.position = self.position + self.velocity
+        for idx in xrange(len(self.position)):
+            pos = ord(self.position[idx])
+            pbest = ord(self.pbest.position[idx])
+            gbest = ord(self.gbest.position[idx])
+
+            for bit in xrange(8):
+                p = 1 if (pos & (2**bit) != 0) else 0
+                pb = 1 if (pbest & (2**bit) != 0) else 0
+                gb = 1 if (gbest & (2**bit) != 0) else 0
+
+                self.velocity[idx*8+bit] = \
+                    self.inertia * self.velocity[idx*8+bit] + \
+                    self.alfa * random.random() * (pb - p) + \
+                    self.beta * random.random() * (gb - p)
+
+                if self.velocity[idx*8+bit] > self.MAX_VEL:
+                    self.velocity[idx*8+bit] = self.MAX_VEL
+                elif self.velocity[idx*8+bit] < -self.MAX_VEL:
+                    self.velocity[idx*8+bit] = -self.MAX_VEL
+
+                if random.random() < self.sigmoid(self.velocity[idx*8+bit]):
+                    pos |= 2**bit # set
+                else:
+                    pos &= ~ (2**bit) # clear
+
+            new_pos += chr(pos)
+
+        self.position = new_pos
+
+    def sub(self, pos1, pos2):
+        if len(pos1) != len(pos2):
+            raise Exception('Cannot substract arrays with different sizes.')
+
+        ret = ''
+        for i in xrange(len(pos1)):
+            ret += chr(ord(pos1[i]) - ord(pos2[i]))
+
+        return ret
+
+    def sigmoid(self, x):
+        return 1 / (1 + math.exp(-x))
 
 if __name__=="__main__":
     main()

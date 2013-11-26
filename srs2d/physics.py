@@ -7,7 +7,7 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# trooper-simulator is distributed in the hope that it will be useful,
+# srs2d is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
@@ -20,27 +20,22 @@ __date__ = "13 Jul 2013"
 
 import os
 import logging
-import random
-import copy
-import math
 import numpy as np
 import pyopencl as cl
-import pyopencl.characterize
 import logging.config
 import io
 
+logging.basicConfig(format='[ %(asctime)s ] [%(levelname)s] %(message)s')
 __log__ = logging.getLogger(__name__)
+
+__dir__ = os.path.dirname(__file__)
 
 NUM_SENSORS = 13
 NUM_ACTUATORS = 4
 NUM_HIDDEN = 3
 
-__dir__ = os.path.dirname(__file__)
-
 class Simulator(object):
     def __init__(self, context, queue, num_worlds=1, num_robots=9, ta=600, tb=5400, time_step=1/10.0, test=False):
-        global NUM_INPUTS, NUM_OUTPUTS
-
         self.context = context
         self.queue = queue
 
@@ -265,119 +260,3 @@ class Simulator(object):
         save_file.close()
 
         return fitness
-
-class ANNParametersArray(object):
-    WEIGHTS_BOUNDARY = (-5.0, 5.0)
-    BIAS_BOUNDARY = (-5.0, 5.0)
-    TIMEC_BOUNDARY = (0, 1.0)
-
-    def __init__(self):
-        length = (NUM_ACTUATORS * (NUM_SENSORS + NUM_HIDDEN) + # weights
-                  NUM_ACTUATORS + # bias \
-                  NUM_HIDDEN * NUM_SENSORS + # weights_hidden
-                  NUM_HIDDEN + # bias_hidden
-                  NUM_HIDDEN) # timec_hidden
-
-        self.encoded = ''
-        for i in xrange(length):
-            self.encoded += chr(random.randint(0,254))
-
-    def copy(self):
-        n = ANNParametersArray()
-        n.encoded = copy.deepcopy(self.encoded)
-        return n
-
-    def __str__(self):
-        ret = ''
-        for c in self.encoded:
-            ret += c.encode('hex')
-        return ret
-
-    def __len__(self):
-        return len(self.encoded)
-
-    def export(self):
-        return self.__str__()
-
-    @staticmethod
-    def load(data):
-        self = ANNParametersArray()
-        self.encoded = data.decode('hex')
-        return self
-
-    def decode(self):
-        ret = {
-            'weights': np.zeros(NUM_ACTUATORS * (NUM_SENSORS + NUM_HIDDEN), dtype=np.float32),
-            'bias': np.zeros(NUM_ACTUATORS, dtype=np.float32),
-            'weights_hidden': np.zeros(NUM_HIDDEN * NUM_SENSORS, dtype=np.float32),
-            'bias_hidden': np.zeros(NUM_HIDDEN, dtype=np.float32),
-            'timec_hidden': np.zeros(NUM_HIDDEN, dtype=np.float32)
-        }
-
-        pos = 0
-
-        for i in xrange(NUM_ACTUATORS * (NUM_SENSORS + NUM_HIDDEN)):
-            ret['weights'][i] = self._decode_value(self.encoded[pos], self.WEIGHTS_BOUNDARY)
-            pos += 1
-
-        for i in xrange(NUM_ACTUATORS):
-            ret['bias'][i] = self._decode_value(self.encoded[pos], self.BIAS_BOUNDARY)
-            pos += 1
-
-        for i in xrange(NUM_HIDDEN * NUM_SENSORS):
-            ret['weights_hidden'][i] = self._decode_value(self.encoded[pos], self.WEIGHTS_BOUNDARY)
-            pos += 1
-
-        for i in xrange(NUM_HIDDEN):
-            ret['bias_hidden'][i] = self._decode_value(self.encoded[pos], self.BIAS_BOUNDARY)
-            pos += 1
-
-        for i in xrange(NUM_HIDDEN):
-            ret['timec_hidden'][i] = self._decode_value(self.encoded[pos], self.TIMEC_BOUNDARY)
-            pos += 1
-
-        return ret
-
-    def _decode_value(self, value, boundary):
-        return float(ord(value) * (boundary[1] - boundary[0])) / 255.0 + boundary[0]
-
-    def merge(self, point, other):
-        if len(self) != len(other):
-            raise Exception('Cannot merge arrays of different sizes.')
-
-        if (point < 0) or (point > (len(self)*8 - 1)):
-            raise Exception('Point out of bounds.')
-
-        idx = int(math.floor(float(point) / 8.0))
-        bit = 7 - (point % 8)  # big endian
-
-        new = self.encoded[:idx]
-
-        sc = ord(self.encoded[idx])
-        oc = ord(other.encoded[idx])
-        r = 0
-        for i in range(8):
-            if (i < bit):
-                r |= sc & (2 ** i)
-            else:
-                r |= oc & (2 ** i)
-        new += chr(r)
-
-        new += other.encoded[(idx+1):]
-
-        self.encoded = new
-
-    def flip(self, point):
-        if (point < 0) or (point > (len(self)*8 - 1)):
-            raise Exception('Point out of bounds.')
-
-        idx = int(math.floor(float(point) / 8.0))
-        bit = 7 - (point % 8)  # big endian
-
-        c = ord(self.encoded[idx])
-        if (c & (2**bit) != 0):
-            c &= ~ (2**bit)
-        else:
-            c |= 2**bit
-
-        self.encoded = self.encoded[:idx] + chr(c) + self.encoded[(idx+1):]

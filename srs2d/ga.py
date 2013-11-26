@@ -7,7 +7,7 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# trooper-simulator is distributed in the hope that it will be useful,
+# srs2d is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
@@ -19,17 +19,19 @@ __author__ = "Eduardo L. Buratti <eburatti09@gmail.com>"
 __date__ = "19 Sep 2013"
 
 import os
+import sys
 import argparse
 import random
 import logging
 import physics
 import pyopencl as cl
-import logging.config
 import solace
 import png
 import subprocess
-import hashlib
 import tempfile
+import math
+
+ANN_PARAMS_SIZE = 113
 
 logging.basicConfig(format='[ %(asctime)s ] [%(levelname)s] %(message)s')
 __log__ = logging.getLogger(__name__)
@@ -39,7 +41,6 @@ def main():
     parser.add_argument("-v", "--verbosity",        help="increase output verbosity", action="count")
     parser.add_argument("-q", "--quiet",            help="supress output (except errors)", action="store_true")
     parser.add_argument("--no-save",                help="skip saving best fitness simulation", action="store_true")
-    parser.add_argument("--image",                  help="generate and upload an image representing current particle population", action="store_true")
     parser.add_argument("--ta",                     help="number of timesteps without fitness avaliation, default is 600", type=int, default=600)
     parser.add_argument("--tb",                     help="number of timesteps with fitness avaliation, default is 5400", type=int, default=5400)
     parser.add_argument("-g", "--num-generations",  help="number of generations, default is 500", type=int, default=500)
@@ -49,7 +50,8 @@ def main():
     parser.add_argument("-d", "--distances",        help="list of distances between target areas to be evaluated each generation, default is 0.7 0.9 1.1 1.3 1.5", type=float, nargs='+', default=[0.7, 0.9, 1.1, 1.3, 1.5])
     parser.add_argument("-t", "--trials",           help="number of trials per distance, default is 3", type=int, default=3)
     parser.add_argument("-c", "--pcrossover",       help="probability of crossover, default is 0.9", type=float, default=0.9)
-    parser.add_argument("-m", "--pmutation",        help="prabability of mutation, default is 0.03", type=float, default=0.03)
+    parser.add_argument("-m", "--pmutation",        help="probability of mutation, default is 0.03", type=float, default=0.03)
+    parser.add_argument("-o", "--offspring",        help="number of children each couple of indivuals generate, MUST BE EVEN, default is 6", type=int, default=6)
     parser.add_argument("-e", "--elite-size",       help="size of population elite, default is 24", type=int, default=24)
     args = parser.parse_args()
 
@@ -62,6 +64,10 @@ def main():
 
     if args.quiet:
         __log__.setLevel(logging.ERROR)
+
+    if (args.offspring % 2) != 0:
+        __log__.error('Offspring must be an even number!')
+        sys.exit(1)
 
     uri = os.environ.get('SOLACE_URI')
     username = os.environ.get('SOLACE_USERNAME')
@@ -83,6 +89,7 @@ def main():
         'PCROSSOVER': args.pcrossover,
         'PMUTATION': args.pmutation,
         'ELITE_SIZE': args.elite_size,
+        'OFFSPRING': args.offspring,
         'STEPS_TA': args.ta,
         'STEPS_TB': args.tb,
         'NUM_GENERATIONS': args.num_generations,
@@ -103,11 +110,10 @@ class GA(object):
 
     def execute(self, run, args):
         __log__.info(' GA Starting...')
-        __log__.info('=' * 80)
 
         run.begin()
 
-        self.population = [ Individual() for i in range(args.population_size) ]
+        self.population = [ Individual(ANN_PARAMS_SIZE) for i in range(args.population_size) ]
         self.simulator = physics.Simulator(self.context, self.queue,
                                            num_worlds=args.population_size,
                                            num_robots=args.num_robots,
@@ -119,22 +125,19 @@ class GA(object):
         while (generation <= args.num_generations):
             __log__.info('[gen=%d] Evaluating population...', generation)
 
-            (avg_fitness, best) = self.evaluate(args.distances, args.trials, args.ta, args.tb)
-
-            for e in self.population:
-                __log__.debug('%s  (%.10f)', hashlib.sha1(str(e.genome)).hexdigest(), e.fitness)
+            (avg_fitness, best) = self.evaluate(args.distances, args.trials)
 
             __log__.info('[gen=%d] Population evaluated, avg_fitness = %.5f, best fitness = %.5f', generation, avg_fitness, best.fitness)
 
+            run.progress(generation / float(args.num_generations), {
+                'generation': generation,
+                'avg_fitness': avg_fitness,
+                'best_fitness': best.fitness,
+                'best_genome': best.genome_hex
+            })
+
             if (last_best_fitness is None) or (best.fitness > last_best_fitness):
                 last_best_fitness = best.fitness
-
-                run.progress(generation / float(args.num_generations), {
-                    'generation': generation,
-                    'avg_fitness': avg_fitness,
-                    'best_fitness': best.fitness,
-                    'best_genome': str(best.genome)
-                })
 
                 if not args.no_save:
                     __log__.info('[gen=%d] Saving simulation for the new found best...', generation)
@@ -142,24 +145,12 @@ class GA(object):
 
                     fitness = self.simulator.simulate_and_save(
                         args.distances[ random.randint(0, len(args.distances)-1) ],
-                        [ best.genome.encoded for i in xrange(len(self.population)) ],
+                        [ best.genome for i in xrange(len(self.population)) ],
                         filename
                     )
 
                     run.upload(filename, 'run-%02d-new-best-gen-%04d-fit-%.4f.srs' % (run.id, generation, fitness[0]) )
                     os.remove(filename)
-            else:
-                run.progress(generation / float(args.num_generations), {
-                    'generation': generation,
-                    'avg_fitness': avg_fitness,
-                    'best_fitness': best.fitness,
-                    'best_genome': str(best.genome)
-                })
-
-            if args.image:
-                self.generate_image('/tmp/image.png')
-                run.upload('/tmp/image.png', 'image-run-%02d-gen-%04d.png' % (run.id, generation))
-                os.remove('/tmp/image.png')
 
             # Generate new pop
             elite = []
@@ -169,16 +160,25 @@ class GA(object):
             new_pop = []
 
             remaining = 0
-            if (len(self.population) % 6) != 0:
-                remaining = len(self.population) % 6
+            if (len(self.population) % args.offspring) != 0:
+                remaining = len(self.population) % args.offspring
 
-            for i in xrange(len(self.population) / 6):
+            for i in xrange(len(self.population) / args.offspring):
                 father = self.select()
+                mother = self.select()
 
-                for j in xrange(6):
-                    individual = father.copy()
-                    individual.mutate(args.pmutation)
-                    new_pop.append(individual)
+                for j in xrange(args.offspring / 2):
+                    if random.random() < args.pcrossover:
+                        brother, sister = father.crossover(mother)
+                    else:
+                        brother = father.copy()
+                        sister = mother.copy()
+
+                    brother.mutate(args.pmutation)
+                    sister.mutate(args.pmutation)
+
+                    new_pop.append(brother)
+                    new_pop.append(sister)
 
             if remaining > 0:
                 father = self.select()
@@ -196,18 +196,18 @@ class GA(object):
 
             generation += 1
 
-        run.done({'generation': generation, 'avg_fitness': avg_fitness, 'best_fitness': best.fitness, 'best_genome': str(best.genome)})
+        run.done()
 
     def select(self):
         return self.population.pop()
 
-    def evaluate(self, distances, trials, ta, tb):
+    def evaluate(self, distances, trials):
         for i in xrange(len(self.population)):
             self.population[i].fitness = 0
 
         for d in distances:
             for t in range(trials):
-                fitness = self.simulator.simulate(d, [ ind.genome.encoded for ind in self.population ])
+                fitness = self.simulator.simulate(d, [ ind.genome for ind in self.population ])
 
                 for i in xrange(len(self.population)):
                     self.population[i].fitness += fitness[i]
@@ -233,7 +233,7 @@ class GA(object):
         for p in xrange(len(self.population)):
             gen = self.population[p].genome
 
-            for c in gen.encoded:
+            for c in gen:
                 blocks[p].append(ord(c))
 
         for i in xrange(len(blocks[0])):
@@ -249,41 +249,88 @@ class GA(object):
 
 
 class Individual(object):
-    def __init__(self):
+    def __init__(self, genome_length):
         self.id = id(self)
 
         self.fitness = 0
-        self.genome = physics.ANNParametersArray()
+
+        self.genome = ''
+        for i in xrange(genome_length):
+            self.genome += chr(random.randint(0,255))
 
     def __repr__(self):
         return 'Individual(%d, fitness=%.5f)' % (self.id, self.fitness)
 
+    @property
+    def genome_hex(self):
+        ret = ''
+        for c in self.genome:
+            ret += c.encode('hex')
+        return ret
+
     def copy(self):
-        g = Individual()
+        g = Individual(len(self.genome))
         g.fitness = self.fitness
-        g.genome = self.genome.copy()
+        g.genome = self.genome
         return g
 
     def crossover(self, other):
        """ Single Point crossover """
-
-       if len(self.genome) <= 0:
-          raise Exception('Invalid genome (lenght <= 0)')
-
        point = random.randint(1, len(self.genome)*8-1)
 
        sister = self.copy()
-       sister.genome.merge(point, other.genome)
-
        brother = other.copy()
-       brother.genome.merge(point, self.genome)
+
+       sister.merge(other, point)
+       brother.merge(self, point)
 
        return (sister, brother)
 
     def mutate(self, pmutation):
         for i in xrange(len(self.genome) * 8):
             if random.random() < pmutation:
-                self.genome.flip(i)
+                self.flip(i)
+
+    def merge(self, other, point):
+        if len(self.genome) != len(other.genome):
+            raise Exception('Cannot merge individuals with different genome lenghts.')
+
+        if (point < 0) or (point > (len(self.genome)*8 - 1)):
+            raise Exception('Point out of bounds.')
+
+        idx = int(math.floor(float(point) / 8.0))
+        bit = 7 - (point % 8)  # big endian
+
+        new = self.genome[:idx]
+
+        sc = ord(self.genome[idx])
+        oc = ord(other.genome[idx])
+        r = 0
+        for i in range(8):
+            if (i < bit):
+                r |= sc & (2 ** i)
+            else:
+                r |= oc & (2 ** i)
+        new += chr(r)
+
+        new += other.genome[(idx+1):]
+
+        self.genome = new
+
+    def flip(self, point):
+        if (point < 0) or (point > (len(self.genome)*8 - 1)):
+            raise Exception('Point out of bounds.')
+
+        idx = int(math.floor(float(point) / 8.0))
+        bit = 7 - (point % 8)  # big endian
+
+        c = ord(self.genome[idx])
+        if (c & (2**bit) != 0):
+            c &= ~ (2**bit)
+        else:
+            c |= 2**bit
+
+        self.genome = self.genome[:idx] + chr(c) + self.genome[(idx+1):]
 
 if __name__=="__main__":
     main()
