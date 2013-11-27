@@ -31,6 +31,8 @@ import subprocess
 import tempfile
 import math
 import ga
+import Queue
+import threading
 
 ANN_PARAMS_SIZE = 113
 
@@ -102,6 +104,8 @@ def main():
         'PMUTATION': args.pmutation,
         'ELITE_SIZE': args.elite_size,
         'OFFSPRING': args.offspring,
+        'MIGRATION_RATE': args.migration_rate,
+        'MIGRATION_FREQ': args.migration_freq,
         'STEPS_TA': args.ta,
         'STEPS_TB': args.tb,
         'NUM_GENERATIONS': args.num_generations,
@@ -113,26 +117,33 @@ def main():
     }, code_version=git_version)
 
     for run in inst.runs:
-        PGA(context).execute(run, args)
+        PGA(context, args).execute(run)
 
 class PGA:
-    def __init__(self, context):
+    def __init__(self, context, args):
         self.context = context
+        self.args = args
 
         self.archipelago = []
-        for device in sef.context.devices:
-            for i in xrange(args.islands_per_device):
-                queue = cl.CommandQueue(context, device)
-                archipelago.append(ga.GA(self.context, queue))
+        for device in self.context.devices:
+            #n = args.islands_per_device
 
-        self.worker_queue = Queue()
+            n = 1
+            if device.type == cl.device_type.GPU:
+                n = 2
+
+            for i in xrange(n):
+                queue = cl.CommandQueue(context, device)
+                self.archipelago.append(ga.GA(self.context, queue, args))
+
+        self.worker_queue = Queue.Queue()
 
         for i in xrange(len(self.archipelago)):
-             t = Thread(target=worker, args=(self))
+             t = threading.Thread(target=self.worker)
              t.daemon = True
              t.start()
 
-    def execute(self, run, args):
+    def execute(self, run):
         __log__.info(' Parallel GA Starting (archipelago size = %d)...' % len(self.archipelago))
 
         if run:
@@ -140,18 +151,18 @@ class PGA:
 
         last_best_fitness = None
         generation = 1
-        while (generation <= args.num_generations):
-            __log__.info('[gen=%d] Evaluating population...', generation)
+        while (generation <= self.args.num_generations):
+            __log__.info('[gen=%d] Evaluating archipelago...', generation)
 
             # evaluate every island
-            for islands in self.archipelago:
-                self.worker_queue.put((island, args))
+            for island in self.archipelago:
+                self.worker_queue.put(island)
             self.worker_queue.join()
 
             # find avg and best fitness
             self.avg_fitness = 0
             self.best = None
-            for islands in self.archipelago:
+            for island in self.archipelago:
                 self.avg_fitness += island.avg_fitness
 
                 if (self.best is None) or (island.best.fitness > self.best.fitness):
@@ -160,22 +171,22 @@ class PGA:
             self.avg_fitness /= len(self.archipelago)
 
             # migration
-            if (generation % args.migration_freq) == 0:
+            if (generation % self.args.migration_freq) == 0:
                 for i in xrange(len(self.archipelago)):
                     cur = self.archipelago[i]
                     next = self.archipelago[(i+1) % len(self.archipelago)]
 
-                    for n in xrange(int(args.population_size * args.migration_freq)):
+                    for n in xrange(int(self.args.population_size * self.args.migration_rate)):
                         next.population.append(cur.population.pop())
 
             # save partial results
 
-            __log__.info('[gen=%d] Population evaluated, avg_fitness = %.5f, best fitness = %.5f', generation, self.avg_fitness, self.best.fitness)
+            __log__.info('[gen=%d] Archipelago evaluated, avg_fitness = %.5f, best fitness = %.5f', generation, self.avg_fitness, self.best.fitness)
 
             if run:
-                run.progress(generation / float(args.num_generations), {
+                run.progress(generation / float(self.args.num_generations), {
                     'generation': generation,
-                    'avg_fitness': avg_fitness,
+                    'avg_fitness': self.avg_fitness,
                     'best_fitness': self.best.fitness,
                     'best_genome': self.best.genome_hex
                 })
@@ -183,13 +194,13 @@ class PGA:
             if (last_best_fitness is None) or (self.best.fitness > last_best_fitness):
                 last_best_fitness = self.best.fitness
 
-                if run and (not args.no_save):
+                if run and (not self.args.no_save):
                     __log__.info('[gen=%d] Saving simulation for the new found best...', generation)
                     _, filename = tempfile.mkstemp(prefix='sim_', suffix='.srs')
 
-                    fitness = self.simulator.simulate_and_save(
-                        args.distances[ random.randint(0, len(args.distances)-1) ],
-                        [ self.best.genome for i in xrange(len(self.population)) ],
+                    fitness = self.archipelago[1].simulator.simulate_and_save(
+                        self.args.distances[ random.randint(0, len(self.args.distances)-1) ],
+                        [ self.best.genome for i in xrange(self.args.population_size) ],
                         filename
                     )
 
@@ -203,8 +214,8 @@ class PGA:
 
     def worker(self):
         while True:
-            (island, args) = self.worker_queue.get()
-            island.step(args)
+            island = self.worker_queue.get()
+            island.step()
             self.worker_queue.task_done()
 
 if __name__=="__main__":

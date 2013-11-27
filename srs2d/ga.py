@@ -110,12 +110,13 @@ def main():
     }, code_version=git_version)
 
     for run in inst.runs:
-        GA(context, queue).execute(args, run)
+        GA(context, queue, args).execute(run)
 
 class GA(object):
-    def __init__(self, context, queue):
+    def __init__(self, context, queue, args):
         self.context = context
         self.queue = queue
+        self.args = args
 
         self.population = [ Individual(ANN_PARAMS_SIZE) for i in range(args.population_size) ]
         self.simulator = physics.Simulator(self.context, self.queue,
@@ -126,7 +127,7 @@ class GA(object):
         self.avg_fitness = None
         self.best = None
 
-    def execute(self, args, run=None):
+    def execute(self, run=None):
         __log__.info(' GA Starting...')
 
         if run:
@@ -134,15 +135,15 @@ class GA(object):
 
         last_best_fitness = None
         generation = 1
-        while (generation <= args.num_generations):
+        while (generation <= self.args.num_generations):
             __log__.info('[gen=%d] Evaluating population...', generation)
 
-            self.step(args, run)
+            self.step()
 
             __log__.info('[gen=%d] Population evaluated, avg_fitness = %.5f, best fitness = %.5f', generation, self.avg_fitness, self.best.fitness)
 
             if run:
-                run.progress(generation / float(args.num_generations), {
+                run.progress(generation / float(self.args.num_generations), {
                     'generation': generation,
                     'avg_fitness': self.avg_fitness,
                     'best_fitness': self.best.fitness,
@@ -152,12 +153,12 @@ class GA(object):
             if (last_best_fitness is None) or (self.best.fitness > last_best_fitness):
                 last_best_fitness = self.best.fitness
 
-                if run and (not args.no_save):
+                if run and (not self.args.no_save):
                     __log__.info('[gen=%d] Saving simulation for the new found best...', generation)
                     _, filename = tempfile.mkstemp(prefix='sim_', suffix='.srs')
 
                     fitness = self.simulator.simulate_and_save(
-                        args.distances[ random.randint(0, len(args.distances)-1) ],
+                        self.args.distances[ random.randint(0, len(self.args.distances)-1) ],
                         [ self.best.genome for i in xrange(len(self.population)) ],
                         filename
                     )
@@ -170,33 +171,33 @@ class GA(object):
         if run:
             run.done()
 
-    def step(self, args):
-        (self.avg_fitness, self.best) = self.evaluate(args.distances, args.trials)
+    def step(self):
+        (self.avg_fitness, self.best) = self.evaluate(self.args.distances, self.args.trials)
 
         # Generate new pop
         elite = []
-        for i in self.population[-args.elite_size:]:
+        for i in self.population[-self.args.elite_size:]:
             elite.append(i.copy())
 
         new_pop = []
 
         remaining = 0
-        if (len(self.population) % args.offspring) != 0:
-            remaining = len(self.population) % args.offspring
+        if (len(self.population) % self.args.offspring) != 0:
+            remaining = len(self.population) % self.args.offspring
 
-        for i in xrange(len(self.population) / args.offspring):
+        for i in xrange(len(self.population) / self.args.offspring):
             father = self.select()
             mother = self.select()
 
-            for j in xrange(args.offspring / 2):
-                if random.random() < args.pcrossover:
+            for j in xrange(self.args.offspring / 2):
+                if random.random() < self.args.pcrossover:
                     brother, sister = father.crossover(mother)
                 else:
                     brother = father.copy()
                     sister = mother.copy()
 
-                brother.mutate(args.pmutation)
-                sister.mutate(args.pmutation)
+                brother.mutate(self.args.pmutation)
+                sister.mutate(self.args.pmutation)
 
                 new_pop.append(brother)
                 new_pop.append(sister)
@@ -206,11 +207,11 @@ class GA(object):
 
             for i in xrange(remaining):
                 individual = father.copy()
-                individual.mutate(args.pmutation)
+                individual.mutate(self.args.pmutation)
                 new_pop.append(individual)
 
         random.shuffle(new_pop)
-        for i in xrange(args.elite_size):
+        for i in xrange(self.args.elite_size):
             new_pop[i] = elite[i]
 
         self.population = new_pop
