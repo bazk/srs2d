@@ -24,34 +24,43 @@ import physics
 import pyopencl as cl
 
 class TestPerfSimulator(object):
-    def run(self, num_trials=10, ann_params=None, d=0.7, num_worlds=120, num_robots=10, ta=18600, tb=5400):
-        context = cl.create_some_context()
+    def run(self, args):
+        device_type = cl.device_type.ALL
+        if args.device_type == 'cpu':
+            device_type = cl.device_type.CPU
+        elif args.device_type == 'gpu':
+            device_type = cl.device_type.GPU
+
+        platform = cl.get_platforms()[0]
+        devices = platform.get_devices(device_type=device_type)
+        context = cl.Context(devices=devices)
         queue = cl.CommandQueue(context)
 
-        simulator = physics.Simulator(context, queue, num_worlds=num_worlds, num_robots=num_robots, ta=ta, tb=tb)
+        simulator = physics.Simulator(context, queue, num_worlds=args.num_worlds, num_robots=args.num_robots, ta=args.ta, tb=args.tb)
         print 'sizeof(world_t) = ', simulator.sizeof_world_t
         print 'work_group_size = ', simulator.work_group_size
         print 'global_size = ', simulator.global_size
         print 'local_size = ', simulator.local_size
 
-        if ann_params is not None:
-            pos = physics.ANNParametersArray.load(ann_params)
+        if args.params is not None:
+            pos = physics.ANNParametersArray.load(args.params)
         else:
             pos = physics.ANNParametersArray()
 
         times = []
 
-        for i in xrange(num_trials):
+        for i in xrange(args.num_trials):
             start = time.time()
-            simulator.simulate(d, [ pos.encoded for i in xrange(num_worlds) ])
+            simulator.simulate(args.distance, [ pos.encoded for i in xrange(args.num_worlds) ])
             end = time.time()
 
             times.append(end - start)
 
-        print 'avg simulation time = ', reduce(lambda x,y: x+y, times) / float(num_trials)
+        print 'avg simulation time = ', reduce(lambda x,y: x+y, times) / float(args.num_trials)
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--device-type", help="device type (all, gpu or cpu), default is all", type=str, default='all')
     parser.add_argument("-s", "--save", help="save the simulation to a file", metavar="FILE")
     parser.add_argument("-p", "--params", help="parameters for the neural network", metavar="ANNPARAMS")
     parser.add_argument("-d", "--distance", type=float, help="distance between target areas", default=0.7)
@@ -62,4 +71,4 @@ if __name__=="__main__":
     parser.add_argument("--tb", type=int, help="number of timesteps with fitness avaliation", default=5400)
     args = parser.parse_args()
 
-    TestPerfSimulator().run(args.num_trials, args.params, args.distance, args.num_worlds, args.num_robots, args.ta, args.tb)
+    TestPerfSimulator().run(args)

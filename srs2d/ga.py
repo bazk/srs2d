@@ -40,6 +40,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-v", "--verbosity",        help="increase output verbosity", action="count")
     parser.add_argument("-q", "--quiet",            help="supress output (except errors)", action="store_true")
+    parser.add_argument("--device-type",            help="device type (all, gpu or cpu), default is all", type=str, default='all')
     parser.add_argument("--no-save",                help="skip saving best fitness simulation", action="store_true")
     parser.add_argument("--ta",                     help="number of timesteps without fitness avaliation, default is 600", type=int, default=600)
     parser.add_argument("--tb",                     help="number of timesteps with fitness avaliation, default is 5400", type=int, default=5400)
@@ -81,7 +82,15 @@ def main():
     if (uri is None) or (username is None) or (password is None):
         raise Exception('Environment variables (SOLACE_URI, SOLACE_USERNAME, SOLACE_PASSWORD) not set!')
 
-    context = cl.create_some_context()
+    device_type = cl.device_type.ALL
+    if args.device_type == 'cpu':
+        device_type = cl.device_type.CPU
+    elif args.device_type == 'gpu':
+        device_type = cl.device_type.GPU
+
+    platform = cl.get_platforms()[0]
+    devices = platform.get_devices(device_type=device_type)
+    context = cl.Context(devices=devices)
     queue = cl.CommandQueue(context)
 
     exp = solace.get_experiment(uri, username, password)
