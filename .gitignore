@@ -3,7 +3,4 @@
 dist
 build
 *.egg-info
-run-ga.sh
-run-pso.sh
-run-test.sh
-run-perf.sh
+run-*.sh
