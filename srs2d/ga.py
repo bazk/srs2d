@@ -110,17 +110,12 @@ def main():
     }, code_version=git_version)
 
     for run in inst.runs:
-        GA(context, queue).execute(run, args)
+        GA(context, queue).execute(args, run)
 
 class GA(object):
     def __init__(self, context, queue):
         self.context = context
         self.queue = queue
-
-    def execute(self, run, args):
-        __log__.info(' GA Starting...')
-
-        run.begin()
 
         self.population = [ Individual(ANN_PARAMS_SIZE) for i in range(args.population_size) ]
         self.simulator = physics.Simulator(self.context, self.queue,
@@ -128,84 +123,97 @@ class GA(object):
                                            num_robots=args.num_robots,
                                            ta=args.ta, tb=args.tb)
 
-        last_best_fitness = None
+        self.avg_fitness = None
+        self.best = None
 
+    def execute(self, args, run=None):
+        __log__.info(' GA Starting...')
+
+        if run:
+            run.begin()
+
+        last_best_fitness = None
         generation = 1
         while (generation <= args.num_generations):
             __log__.info('[gen=%d] Evaluating population...', generation)
 
-            (avg_fitness, best) = self.evaluate(args.distances, args.trials)
+            self.step(args, run)
 
-            __log__.info('[gen=%d] Population evaluated, avg_fitness = %.5f, best fitness = %.5f', generation, avg_fitness, best.fitness)
+            __log__.info('[gen=%d] Population evaluated, avg_fitness = %.5f, best fitness = %.5f', generation, self.avg_fitness, self.best.fitness)
 
-            run.progress(generation / float(args.num_generations), {
-                'generation': generation,
-                'avg_fitness': avg_fitness,
-                'best_fitness': best.fitness,
-                'best_genome': best.genome_hex
-            })
+            if run:
+                run.progress(generation / float(args.num_generations), {
+                    'generation': generation,
+                    'avg_fitness': self.avg_fitness,
+                    'best_fitness': self.best.fitness,
+                    'best_genome': self.best.genome_hex
+                })
 
-            if (last_best_fitness is None) or (best.fitness > last_best_fitness):
-                last_best_fitness = best.fitness
+            if (last_best_fitness is None) or (self.best.fitness > last_best_fitness):
+                last_best_fitness = self.best.fitness
 
-                if not args.no_save:
+                if run and (not args.no_save):
                     __log__.info('[gen=%d] Saving simulation for the new found best...', generation)
                     _, filename = tempfile.mkstemp(prefix='sim_', suffix='.srs')
 
                     fitness = self.simulator.simulate_and_save(
                         args.distances[ random.randint(0, len(args.distances)-1) ],
-                        [ best.genome for i in xrange(len(self.population)) ],
+                        [ self.best.genome for i in xrange(len(self.population)) ],
                         filename
                     )
 
                     run.upload(filename, 'run-%02d-new-best-gen-%04d-fit-%.4f.srs' % (run.id, generation, fitness[0]) )
                     os.remove(filename)
 
-            # Generate new pop
-            elite = []
-            for i in self.population[-args.elite_size:]:
-                elite.append(i.copy())
-
-            new_pop = []
-
-            remaining = 0
-            if (len(self.population) % args.offspring) != 0:
-                remaining = len(self.population) % args.offspring
-
-            for i in xrange(len(self.population) / args.offspring):
-                father = self.select()
-                mother = self.select()
-
-                for j in xrange(args.offspring / 2):
-                    if random.random() < args.pcrossover:
-                        brother, sister = father.crossover(mother)
-                    else:
-                        brother = father.copy()
-                        sister = mother.copy()
-
-                    brother.mutate(args.pmutation)
-                    sister.mutate(args.pmutation)
-
-                    new_pop.append(brother)
-                    new_pop.append(sister)
-
-            if remaining > 0:
-                father = self.select()
-
-                for i in xrange(remaining):
-                    individual = father.copy()
-                    individual.mutate(args.pmutation)
-                    new_pop.append(individual)
-
-            random.shuffle(new_pop)
-            for i in xrange(args.elite_size):
-                new_pop[i] = elite[i]
-
-            self.population = new_pop
-
             generation += 1
 
-        run.done()
+        if run:
+            run.done()
+
+    def step(self, args):
+        (self.avg_fitness, self.best) = self.evaluate(args.distances, args.trials)
+
+        # Generate new pop
+        elite = []
+        for i in self.population[-args.elite_size:]:
+            elite.append(i.copy())
+
+        new_pop = []
+
+        remaining = 0
+        if (len(self.population) % args.offspring) != 0:
+            remaining = len(self.population) % args.offspring
+
+        for i in xrange(len(self.population) / args.offspring):
+            father = self.select()
+            mother = self.select()
+
+            for j in xrange(args.offspring / 2):
+                if random.random() < args.pcrossover:
+                    brother, sister = father.crossover(mother)
+                else:
+                    brother = father.copy()
+                    sister = mother.copy()
+
+                brother.mutate(args.pmutation)
+                sister.mutate(args.pmutation)
+
+                new_pop.append(brother)
+                new_pop.append(sister)
+
+        if remaining > 0:
+            father = self.select()
+
+            for i in xrange(remaining):
+                individual = father.copy()
+                individual.mutate(args.pmutation)
+                new_pop.append(individual)
+
+        random.shuffle(new_pop)
+        for i in xrange(args.elite_size):
+            new_pop[i] = elite[i]
+
+        self.population = new_pop
 
     def select(self):
         return self.population.pop()
