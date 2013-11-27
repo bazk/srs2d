@@ -670,13 +670,21 @@ void fill_raycast_table(__global world_t *world, __local transform_t *transforms
 
     for (otherid = 0; otherid < ROBOTS_PER_WORLD; otherid++)
     {
+        robot->raycast_table[otherid] = 0;
+
         float2 front_ray = transform_mul_vec(transforms[otherid], front) - camerapos;
         float front_ray_length = length(front_ray);
         float2 front_ray_normal = front_ray / front_ray_length;
+        float front_angle = angle(front_ray_normal.y, front_ray_normal.x) - robot_angle;
 
         float2 rear_ray = transform_mul_vec(transforms[otherid], rear) - camerapos;
         float rear_ray_length = length(rear_ray);
         float2 rear_ray_normal = rear_ray / rear_ray_length;
+        float rear_angle = angle(rear_ray_normal.y, rear_ray_normal.x) - robot_angle;
+
+        if ( ((fabs(front_angle) > (CAMERA_ANGLE/2)) || (front_ray_length > CAMERA_RADIUS)) &&
+             ((fabs(rear_angle) > (CAMERA_ANGLE/2)) || (rear_ray_length > CAMERA_RADIUS)) )
+            continue;
 
         unsigned int front_intercept = 0, rear_intercept = 0;
 
@@ -699,12 +707,7 @@ void fill_raycast_table(__global world_t *world, __local transform_t *transforms
                               (distance(rear_proj, interpos) < ROBOT_BODY_RADIUS)) ? 1 : 0;
         }
 
-        float front_angle = angle(front_ray_normal.y, front_ray_normal.x) - robot_angle;
-        float rear_angle = angle(rear_ray_normal.y, rear_ray_normal.x) - robot_angle;
-
-        robot->raycast_table[otherid] = 0;
-
-        if ((fabs(front_angle) < (CAMERA_ANGLE/2)) && (front_ray_length < CAMERA_RADIUS) && (front_intercept == 0))
+        if ((fabs(front_angle) <= (CAMERA_ANGLE/2)) && (front_ray_length <= CAMERA_RADIUS) && (front_intercept == 0))
         {
             if (front_angle <= 0)
                 robot->raycast_table[otherid] |= 1;
@@ -712,7 +715,7 @@ void fill_raycast_table(__global world_t *world, __local transform_t *transforms
                 robot->raycast_table[otherid] |= 2;
         }
 
-        if ((fabs(rear_angle) < (CAMERA_ANGLE/2)) && (rear_ray_length < CAMERA_RADIUS) && (rear_intercept == 0))
+        if ((fabs(rear_angle) <= (CAMERA_ANGLE/2)) && (rear_ray_length <= CAMERA_RADIUS) && (rear_intercept == 0))
         {
             if (rear_angle <= 0)
                 robot->raycast_table[otherid] |= 4;
@@ -725,9 +728,15 @@ void fill_raycast_table(__global world_t *world, __local transform_t *transforms
     {
         targetpos = world->target_areas[targetid].center;
 
+        robot->raycast_table[ROBOTS_PER_WORLD+targetid] = 0;
+
         float2 ray = targetpos - camerapos;
         float ray_length = length(ray);
         float2 ray_normal = ray / ray_length;
+        float target_angle = angle(ray_normal.y, ray_normal.x) - robot_angle;
+
+        if ( (fabs(target_angle) > (CAMERA_ANGLE/2)) || (ray_length > CAMERA_RADIUS) )
+            continue;
 
         unsigned int intercept = 0;
 
@@ -744,11 +753,7 @@ void fill_raycast_table(__global world_t *world, __local transform_t *transforms
                           (distance(proj, interpos) < ROBOT_BODY_RADIUS)) ? 1 : 0;
         }
 
-        float target_angle = angle(ray_normal.y, ray_normal.x) - robot_angle;
-
-        robot->raycast_table[ROBOTS_PER_WORLD+targetid] = 0;
-
-        if ((fabs(target_angle) < (CAMERA_ANGLE/2)) && (ray_length < CAMERA_RADIUS) && (intercept == 0))
+        if ((fabs(target_angle) <= (CAMERA_ANGLE/2)) && (ray_length <= CAMERA_RADIUS) && (intercept == 0))
         {
             if (target_angle <= 0)
                 robot->raycast_table[ROBOTS_PER_WORLD+targetid] |= 4;
