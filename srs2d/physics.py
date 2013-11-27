@@ -56,10 +56,15 @@ class Simulator(object):
             self.global_size = (self.num_worlds,1)
             self.local_size = (1,1)
 
-        else:
+        elif self.queue.device.type == cl.device_type.GPU:
             self.work_items_are_worlds = False
             self.global_size = (self.num_worlds,self.num_robots)
             self.local_size = (1,self.num_robots)
+
+        else:
+            self.work_items_are_worlds = True
+            self.global_size = (self.num_worlds,1)
+            self.local_size = (1,1)
 
         options = [
             '-I"%s"' % os.path.join(__dir__, 'kernels/'),
