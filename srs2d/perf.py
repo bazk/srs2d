@@ -21,7 +21,10 @@ __date__ = "04 Jul 2013"
 import argparse
 import time
 import physics
+import random
 import pyopencl as cl
+
+ANN_PARAMS_SIZE = 113
 
 class TestPerfSimulator(object):
     def run(self, args):
@@ -43,15 +46,17 @@ class TestPerfSimulator(object):
         print 'local_size = ', simulator.local_size
 
         if args.params is not None:
-            pos = physics.ANNParametersArray.load(args.params)
+            pos = args.params.decode('hex')
         else:
-            pos = physics.ANNParametersArray()
+            pos = ''
+            for i in xrange(ANN_PARAMS_SIZE):
+                pos += chr(random.randint(0,255))
 
         times = []
 
         for i in xrange(args.num_trials):
             start = time.time()
-            simulator.simulate(args.distance, [ pos.encoded for i in xrange(args.num_worlds) ])
+            simulator.simulate(args.distance, [ pos for i in xrange(args.num_worlds) ])
             end = time.time()
 
             times.append(end - start)

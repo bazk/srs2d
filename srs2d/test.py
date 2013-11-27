@@ -7,7 +7,7 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# trooper-simulator is distributed in the hope that it will be useful,
+# srs2d is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
@@ -20,7 +20,10 @@ __date__ = "04 Jul 2013"
 
 import argparse
 import physics
+import random
 import pyopencl as cl
+
+ANN_PARAMS_SIZE = 113
 
 class TestSimulator(object):
     def run(self, args):
@@ -38,15 +41,17 @@ class TestSimulator(object):
         simulator = physics.Simulator(context, queue, num_worlds=args.num_worlds, num_robots=args.num_robots, ta=args.ta, tb=args.tb, test=False)
 
         if args.params is not None:
-            pos = physics.ANNParametersArray.load(args.params)
+            pos = args.params.decode('hex')
         else:
-            pos = physics.ANNParametersArray()
+            pos = ''
+            for i in xrange(ANN_PARAMS_SIZE):
+                pos += chr(random.randint(0,255))
 
         if args.save is None:
-            fitness = simulator.simulate(args.distance, [ pos.encoded for i in xrange(args.num_worlds) ])
+            fitness = simulator.simulate(args.distance, [ pos for i in xrange(args.num_worlds) ])
 
         else:
-            fitness = simulator.simulate_and_save(args.distance, [ pos.encoded for i in xrange(args.num_worlds) ], args.save)
+            fitness = simulator.simulate_and_save(args.distance, [ pos for i in xrange(args.num_worlds) ], args.save)
 
         print 'fitness = ', fitness[0]
 
