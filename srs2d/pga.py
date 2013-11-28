@@ -128,9 +128,9 @@ class PGA:
         for device in self.context.devices:
             #n = args.islands_per_device
 
-            n = 1
+            n = 3
             if device.type == cl.device_type.GPU:
-                n = 2
+                n = 7
 
             for i in xrange(n):
                 queue = cl.CommandQueue(context, device)
