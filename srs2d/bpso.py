@@ -106,15 +106,15 @@ def main():
     }, code_version=git_version)
 
     for run in inst.runs:
-        PSO(context, queue).execute(run, args)
+        BinaryPSO(context, queue).execute(run, args)
 
-class PSO(object):
+class BinaryPSO(object):
     def __init__(self, context, queue):
         self.context = context
         self.queue = queue
 
     def execute(self, run, args):
-        __log__.info('Starting PSO...')
+        __log__.info('Starting BinaryPSO...')
 
         run.begin()
 
@@ -163,7 +163,7 @@ class PSO(object):
 
             if new_gbest and (not args.no_save):
                 __log__.info('[gen=%d] Saving simulation for the new found gbest...', generation)
-                _, filename = tempfile.mkstemp(prefix='pso_sim_', suffix='.srs')
+                _, filename = tempfile.mkstemp(prefix='bpso_sim_', suffix='.srs')
 
                 fitness = self.simulator.simulate_and_save(
                     args.distances[ random.randint(0, len(args.distances)-1) ],
