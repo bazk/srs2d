@@ -30,6 +30,7 @@ import png
 import subprocess
 import tempfile
 import math
+import time
 
 ANN_PARAMS_SIZE = 113
 
@@ -127,6 +128,9 @@ class GA(object):
         self.avg_fitness = None
         self.best = None
 
+        self.step_count = 0
+        self.avg_step_time = 0
+
     def execute(self, run=None):
         __log__.info(' GA Starting...')
 
@@ -172,6 +176,8 @@ class GA(object):
             run.done()
 
     def step(self):
+        start = time.time()
+
         (self.avg_fitness, self.best) = self.evaluate(self.args.distances, self.args.trials)
 
         # Generate new pop
@@ -215,6 +221,10 @@ class GA(object):
             new_pop[i] = elite[i]
 
         self.population = new_pop
+
+        end = time.time()
+        self.step_count += 1
+        self.avg_step_time = (self.avg_step_time * (self.step_count - 1) + (end - start)) / self.step_count
 
     def select(self):
         return self.population.pop()

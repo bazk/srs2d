@@ -216,6 +216,14 @@ class PGA:
         while True:
             island = self.worker_queue.get()
             island.step()
+
+            if island.queue.device.type == cl.device_type.GPU:
+                __log__.debug('GPU island step finished (avg_step_time: %.2f seconds)', island.avg_step_time)
+            elif island.queue.device.type == cl.device_type.CPU:
+                __log__.debug('CPU island step finished (avg_step_time: %.2f seconds)', island.avg_step_time)
+            else:
+                __log__.debug('Unknown device island step finished (avg_step_time: %.2f seconds)', island.avg_step_time)
+
             self.worker_queue.task_done()
 
 if __name__=="__main__":
