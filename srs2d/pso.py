@@ -229,8 +229,8 @@ class Particle(object):
         self.alfa = alfa
         self.beta = beta
 
-        self.position = np.random.uniform(self.MIN_POS, self.MAX_POS, (size,255))
-        self.velocity = np.random.uniform(self.MIN_SPEED, self.MAX_SPEED, (size,255))
+        self.position = np.random.uniform(self.MIN_POS, self.MAX_POS, size)
+        self.velocity = np.random.uniform(self.MIN_SPEED, self.MAX_SPEED, size)
 
         self.pbest = None
         self.gbest = None
@@ -247,7 +247,7 @@ class Particle(object):
 
     @property
     def position_decoded(self):
-        return self.position
+        return self.position.tolist()
 
     def copy(self):
         p = Particle(len(self.position), self.inertia, self.alfa, self.beta)
