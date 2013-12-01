@@ -10,7 +10,7 @@
 #include <ir_wall_samples.cl>
 #include <ir_round_samples.cl>
 
-void init_world(__global world_t *world, __local transform_t *transforms, float targets_distance, __global unsigned char *params);
+void init_world(__global world_t *world, __local transform_t *transforms, float targets_distance, __global float *params);
 void init_robot(__global world_t *world, __local transform_t *transforms, __global robot_t *robot);
 void set_random_position(__global world_t *world, __local transform_t *transforms, __global robot_t *robot, __global float4 *random_positions);
 void step_actuators(__global world_t *world, __local transform_t *transforms, __global robot_t *robot);
@@ -23,7 +23,7 @@ __kernel
 __attribute__((reqd_work_group_size(WORLDS_PER_LOCAL, ROBOTS_PER_LOCAL, 1)))
 void simulate(__global world_t *worlds,
               float targets_distance,
-              __global unsigned char *param_list,
+              __global float *param_list,
               unsigned int param_size,
               __global float4 *random_positions,
 
@@ -42,7 +42,7 @@ void simulate(__global world_t *worlds,
               unsigned int save_hist
              )
 {
-    __global unsigned char *params = param_list + (get_global_id(0)*param_size);
+    __global float *params = &param_list[get_global_id(0)*param_size];
 
     unsigned int cur = 0;
     unsigned int rid;
@@ -252,7 +252,7 @@ void simulate(__global world_t *worlds,
 void init_world(__global world_t *world,
                 __local transform_t *transforms,
                 float targets_distance,
-                __global unsigned char *params)
+                __global float *params)
 {
     // walls
     world->arena_height = ARENA_HEIGHT;
@@ -293,18 +293,18 @@ void init_world(__global world_t *world,
     for (i=0; i<NUM_ACTUATORS; i++)
     {
         for (j=0; j<(NUM_SENSORS+NUM_HIDDEN); j++)
-            world->weights[i*(NUM_SENSORS+NUM_HIDDEN)+j] = decode_param(params[p++], WEIGHTS_BOUNDARY_L, WEIGHTS_BOUNDARY_H);
+            world->weights[i*(NUM_SENSORS+NUM_HIDDEN)+j] = scale_param(params[p++], WEIGHTS_BOUNDARY_L, WEIGHTS_BOUNDARY_H);
 
-        world->bias[i] = decode_param(params[p++], BIAS_BOUNDARY_L, BIAS_BOUNDARY_H);
+        world->bias[i] = scale_param(params[p++], BIAS_BOUNDARY_L, BIAS_BOUNDARY_H);
     }
 
     for (i=0; i<NUM_HIDDEN; i++)
     {
         for (j=0; j<NUM_SENSORS; j++)
-            world->weights_hidden[i*NUM_SENSORS+j] = decode_param(params[p++], WEIGHTS_BOUNDARY_L, WEIGHTS_BOUNDARY_H);
+            world->weights_hidden[i*NUM_SENSORS+j] = scale_param(params[p++], WEIGHTS_BOUNDARY_L, WEIGHTS_BOUNDARY_H);
 
-        world->bias_hidden[i] = decode_param(params[p++], BIAS_BOUNDARY_L, BIAS_BOUNDARY_H);
-        world->timec_hidden[i] = decode_param(params[p++], TIMEC_BOUNDARY_L, TIMEC_BOUNDARY_H);
+        world->bias_hidden[i] = scale_param(params[p++], BIAS_BOUNDARY_L, BIAS_BOUNDARY_H);
+        world->timec_hidden[i] = scale_param(params[p++], TIMEC_BOUNDARY_L, TIMEC_BOUNDARY_H);
     }
 }
 

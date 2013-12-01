@@ -200,7 +200,7 @@ class PGA:
 
                     fitness = self.archipelago[1].simulator.simulate_and_save(
                         self.args.distances[ random.randint(0, len(self.args.distances)-1) ],
-                        [ self.best.genome for i in xrange(self.args.population_size) ],
+                        [ self.best.genome_decoded for i in xrange(self.args.population_size) ],
                         filename
                     )
 

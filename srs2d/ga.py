@@ -30,6 +30,7 @@ import png
 import subprocess
 import tempfile
 import math
+import numpy as np
 import time
 
 ANN_PARAMS_SIZE = 113
@@ -163,7 +164,7 @@ class GA(object):
 
                     fitness = self.simulator.simulate_and_save(
                         self.args.distances[ random.randint(0, len(self.args.distances)-1) ],
-                        [ self.best.genome for i in xrange(len(self.population)) ],
+                        [ self.best.genome_decoded for i in xrange(len(self.population)) ],
                         filename
                     )
 
@@ -235,7 +236,7 @@ class GA(object):
 
         for d in distances:
             for t in range(trials):
-                fitness = self.simulator.simulate(d, [ ind.genome for ind in self.population ])
+                fitness = self.simulator.simulate(d, [ ind.genome_decoded for ind in self.population ])
 
                 for i in xrange(len(self.population)):
                     self.population[i].fitness += fitness[i]
@@ -294,6 +295,13 @@ class Individual(object):
         ret = ''
         for c in self.genome:
             ret += c.encode('hex')
+        return ret
+
+    @property
+    def genome_decoded(self):
+        ret = np.zeros(len(self.genome))
+        for i in xrange(len(self.genome)):
+            ret[i] = float(ord(self.genome[i])) / 255
         return ret
 
     def copy(self):

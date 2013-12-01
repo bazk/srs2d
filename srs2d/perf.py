@@ -23,6 +23,7 @@ import time
 import physics
 import random
 import pyopencl as cl
+import numpy as np
 
 ANN_PARAMS_SIZE = 113
 
@@ -52,11 +53,15 @@ class TestPerfSimulator(object):
             for i in xrange(ANN_PARAMS_SIZE):
                 pos += chr(random.randint(0,255))
 
+        decoded = np.zeros(len(pos))
+        for i in xrange(len(pos)):
+            decoded[i] = float(ord(pos[i])) / 255
+
         times = []
 
         for i in xrange(args.num_trials):
             start = time.time()
-            simulator.simulate(args.distance, [ pos for i in xrange(args.num_worlds) ])
+            simulator.simulate(args.distance, [ decoded for i in xrange(args.num_worlds) ])
             end = time.time()
 
             times.append(end - start)

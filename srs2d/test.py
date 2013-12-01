@@ -22,6 +22,7 @@ import argparse
 import physics
 import random
 import pyopencl as cl
+import numpy as np
 
 ANN_PARAMS_SIZE = 113
 
@@ -47,11 +48,15 @@ class TestSimulator(object):
             for i in xrange(ANN_PARAMS_SIZE):
                 pos += chr(random.randint(0,255))
 
+        decoded = np.zeros(len(pos))
+        for i in xrange(len(pos)):
+            decoded[i] = float(ord(pos[i])) / 255
+
         if args.save is None:
-            fitness = simulator.simulate(args.distance, [ pos for i in xrange(args.num_worlds) ])
+            fitness = simulator.simulate(args.distance, [ decoded for i in xrange(args.num_worlds) ])
 
         else:
-            fitness = simulator.simulate_and_save(args.distance, [ pos for i in xrange(args.num_worlds) ], args.save)
+            fitness = simulator.simulate_and_save(args.distance, [ decoded for i in xrange(args.num_worlds) ], args.save)
 
         print 'fitness = ', fitness[0]
 

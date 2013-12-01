@@ -167,7 +167,7 @@ class DiscretePSO(object):
 
                 fitness = self.simulator.simulate_and_save(
                     args.distances[ random.randint(0, len(args.distances)-1) ],
-                    [ self.gbest.position for i in xrange(len(self.particles)) ],
+                    [ self.gbest.position_decoded for i in xrange(len(self.particles)) ],
                     filename
                 )
 
@@ -184,7 +184,7 @@ class DiscretePSO(object):
 
         for d in distances:
             for t in range(trials):
-                fitness = self.simulator.simulate(d, [ p.position for p in self.particles ])
+                fitness = self.simulator.simulate(d, [ p.position_decoded for p in self.particles ])
 
                 for i in xrange(len(self.particles)):
                     self.particles[i].fitness += fitness[i]
@@ -244,6 +244,13 @@ class Particle(object):
         ret = ''
         for c in self.position:
             ret += c.encode('hex')
+        return ret
+
+    @property
+    def position_decoded(self):
+        ret = np.zeros(len(self.position))
+        for i in xrange(len(self.position)):
+            ret[i] = float(ord(self.position[i])) / 255
         return ret
 
     def copy(self):

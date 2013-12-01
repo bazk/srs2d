@@ -112,7 +112,7 @@ class Simulator(object):
         if len(param_list) != self.num_worlds:
             raise Exception('Number of parameters is not equal to the number of worlds!')
 
-        param = np.chararray(len(param_list), len(param_list[0]))
+        param = np.zeros((len(param_list), len(param_list[0])), np.float32)
         param[:] = param_list
         param_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=param)
 
