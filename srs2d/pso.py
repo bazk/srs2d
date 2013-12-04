@@ -214,8 +214,8 @@ class PSO(object):
         png.from_array(pixels, 'L').save(filename)
 
 class Particle(object):
-    MIN_SPEED = -1
-    MAX_SPEED =  1
+    MIN_SPEED = -0.1
+    MAX_SPEED =  0.1
 
     MIN_POS = 0
     MAX_POS = 1
