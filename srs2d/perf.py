@@ -40,7 +40,7 @@ class TestPerfSimulator(object):
         context = cl.Context(devices=devices)
         queue = cl.CommandQueue(context)
 
-        simulator = physics.Simulator(context, queue, num_worlds=args.num_worlds, num_robots=args.num_robots, ta=args.ta, tb=args.tb)
+        simulator = physics.Simulator(context, queue, num_worlds=args.num_worlds, num_robots=args.num_robots, ta=args.ta, tb=args.tb, random_targets=(not args.fixed_targets))
         print 'sizeof(world_t) = ', simulator.sizeof_world_t
         print 'work_group_size = ', simulator.work_group_size
         print 'global_size = ', simulator.global_size
@@ -79,6 +79,7 @@ if __name__=="__main__":
     parser.add_argument("-t", "--num-trials", type=int, help="number of trials", default=10)
     parser.add_argument("--ta", type=int, help="number of timesteps without fitness avaliation", default=18600)
     parser.add_argument("--tb", type=int, help="number of timesteps with fitness avaliation", default=5400)
+    parser.add_argument("--fixed-targets", help="targets will always be in the same position", action="store_true")
     args = parser.parse_args()
 
     TestPerfSimulator().run(args)

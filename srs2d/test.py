@@ -39,7 +39,7 @@ class TestSimulator(object):
         context = cl.Context(devices=devices)
         queue = cl.CommandQueue(context)
 
-        simulator = physics.Simulator(context, queue, num_worlds=args.num_worlds, num_robots=args.num_robots, ta=args.ta, tb=args.tb, test=False)
+        simulator = physics.Simulator(context, queue, num_worlds=args.num_worlds, num_robots=args.num_robots, ta=args.ta, tb=args.tb, test=False, random_targets=(not args.fixed_targets))
 
         if args.params is not None:
             pos = args.params.decode('hex')
@@ -70,6 +70,7 @@ if __name__=="__main__":
     parser.add_argument("-n", "--num-robots", type=int, help="number of robots in the simulation", default=10)
     parser.add_argument("--ta", type=int, help="number of timesteps without fitness avaliation", default=18600)
     parser.add_argument("--tb", type=int, help="number of timesteps with fitness avaliation", default=5400)
+    parser.add_argument("--fixed-targets", help="targets will always be in the same position", action="store_true")
     args = parser.parse_args()
 
     TestSimulator().run(args)

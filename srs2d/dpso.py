@@ -54,6 +54,7 @@ def main():
     parser.add_argument("-n", "--num-robots",       help="number of robots, default is 10", type=int, default=10)
     parser.add_argument("-p", "--population-size",  help="PSO population size (particles), default is 10", type=int, default=10)
     parser.add_argument("-d", "--distances",        help="list of distances between target areas to be evaluated each generation, default is 0.7 0.9 1.1 1.3 1.5", type=float, nargs='+', default=[0.7, 0.9, 1.1, 1.3, 1.5])
+    parser.add_argument("--fixed-targets",          help="targets will always be in the same position", action="store_true")
     parser.add_argument("-t", "--trials",           help="number of trials per distance, default is 3", type=int, default=3)
     args = parser.parse_args()
 
@@ -126,7 +127,7 @@ class DiscretePSO(object):
         self.simulator = physics.Simulator(self.context, self.queue,
                                            num_worlds=args.population_size,
                                            num_robots=args.num_robots,
-                                           ta=args.ta, tb=args.tb)
+                                           ta=args.ta, tb=args.tb, random_targets=(not args.fixed_targets))
 
         generation = 1
         while (generation <= args.num_generations):

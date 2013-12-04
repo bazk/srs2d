@@ -35,7 +35,7 @@ NUM_ACTUATORS = 4
 NUM_HIDDEN = 3
 
 class Simulator(object):
-    def __init__(self, context, queue, num_worlds=1, num_robots=9, ta=600, tb=5400, time_step=1/10.0, test=False):
+    def __init__(self, context, queue, num_worlds=1, num_robots=9, ta=600, tb=5400, time_step=1/10.0, test=False, random_targets=True):
         self.context = context
         self.queue = queue
 
@@ -74,7 +74,7 @@ class Simulator(object):
             '-DTA=%d' % ta,
             '-DTB=%d' % tb,
             '-DWORLDS_PER_LOCAL=%d' % self.local_size[0],
-            '-DROBOTS_PER_LOCAL=%d' % self.local_size[1]
+            '-DROBOTS_PER_LOCAL=%d' % self.local_size[1],
         ]
 
         if (test):
@@ -82,6 +82,9 @@ class Simulator(object):
 
         if (self.work_items_are_worlds):
             options.append('-DWORK_ITEMS_ARE_WORLDS')
+
+        if (random_targets):
+            options.append('-DRANDOM_TARGET_AREAS')
 
         src = open(os.path.join(__dir__, 'kernels/physics.cl'), 'r')
         self.prg = cl.Program(context, src.read()).build(options=' '.join(options))
@@ -116,8 +119,8 @@ class Simulator(object):
         param[:] = param_list
         param_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=param)
 
-        random_positions = np.random.rand(self.num_worlds, self.num_robots, 10, 4).astype(np.float32)
-        random_positions_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=random_positions)
+        # random_positions = np.random.rand(self.num_worlds, self.num_robots, 10, 4).astype(np.float32)
+        # random_positions_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=random_positions)
 
         fitness_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(4 * self.num_worlds))
 
@@ -146,10 +149,15 @@ class Simulator(object):
             actuators_hist_buf = None
             hidden_hist_buf = None
 
+        ranluxcltab = cl.Buffer(self.context, 0, self.num_worlds * self.num_robots * 112)
+        init_ranluxcl = self.prg.init_ranluxcl
+        init_ranluxcl.set_scalar_arg_dtypes((np.uint32, None))
+        init_ranluxcl(self.queue, self.global_size, self.local_size, np.random.randint(0, 4294967295), ranluxcltab).wait()
+
         simulate = self.prg.simulate
-        simulate.set_scalar_arg_dtypes((None, np.float32,
+        simulate.set_scalar_arg_dtypes((None,
+                                        None, np.float32,
                                         None, np.uint32,
-                                        None,
                                         None,
                                         None, None,
                                         None, None,
@@ -157,9 +165,9 @@ class Simulator(object):
                                         None, None, None,
                                         np.uint32))
         simulate(self.queue, self.global_size, self.local_size,
+                 ranluxcltab,
                  self.worlds, targets_distance,
                  param_buf, len(param_list[0]),
-                 random_positions_buf,
                  fitness_buf,
                  robot_radius_buf, arena_size_buf,
                  target_areas_pos_buf, target_areas_radius_buf,

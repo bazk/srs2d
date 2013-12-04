@@ -10,22 +10,29 @@
 #include <ir_wall_samples.cl>
 #include <ir_round_samples.cl>
 
-void init_world(__global world_t *world, __local transform_t *transforms, float targets_distance, __global float *params);
-void init_robot(__global world_t *world, __local transform_t *transforms, __global robot_t *robot);
-void set_random_position(__global world_t *world, __local transform_t *transforms, __global robot_t *robot, __global float4 *random_positions);
+#include <ranluxcl.cl>
+
+void init_world(__global ranluxcl_state_t *ranluxcltab, __global world_t *world, __local transform_t *transforms, float targets_distance, __global float *params);
+void init_robot(__global ranluxcl_state_t *ranluxcltab, __global world_t *world, __local transform_t *transforms, __global robot_t *robot);
+void set_random_position(__global ranluxcl_state_t *ranluxcltab, __global world_t *world, __local transform_t *transforms, __global robot_t *robot);
 void step_actuators(__global world_t *world, __local transform_t *transforms, __global robot_t *robot);
 void step_sensors(__global world_t *world, __local transform_t *transforms, __global robot_t *robot);
 void step_collisions(__global world_t *world, __local transform_t *transforms, __global robot_t *robot);
 void step_controllers(__global world_t *world, __local transform_t *transforms, __global robot_t *robot);
 void fill_raycast_table(__global world_t *world, __local transform_t *transforms, __global robot_t *robot);
 
+__kernel void init_ranluxcl(uint seed, __global ranluxcl_state_t *ranluxcltab)
+{
+    ranluxcl_initialization(seed, ranluxcltab);
+}
+
 __kernel
 __attribute__((reqd_work_group_size(WORLDS_PER_LOCAL, ROBOTS_PER_LOCAL, 1)))
-void simulate(__global world_t *worlds,
+void simulate(__global ranluxcl_state_t *ranluxcltab,
+              __global world_t *worlds,
               float targets_distance,
               __global float *param_list,
               unsigned int param_size,
-              __global float4 *random_positions,
 
               // return variables
               __global float *fitness,
@@ -61,13 +68,12 @@ void simulate(__global world_t *worlds,
 
 #ifdef WORK_ITEMS_ARE_WORLDS
     world->id = get_global_id(0);
-    init_world(world, transforms, targets_distance, params);
+    init_world(ranluxcltab, world, transforms, targets_distance, params);
 
     for (rid = 0; rid < ROBOTS_PER_WORLD; rid++)
     {
         world->robots[rid].id = rid;
-        init_robot(world, transforms, &world->robots[rid]);
-        set_random_position(world, transforms, &world->robots[rid], &random_positions[world->id * (ROBOTS_PER_WORLD * 10) + rid * 10]);
+        init_robot(ranluxcltab, world, transforms, &world->robots[rid]);
     }
 
     while (cur < (TA + TB))
@@ -155,13 +161,12 @@ void simulate(__global world_t *worlds,
     if (get_global_id(1) == 0)
     {
         world->id = get_global_id(0);
-        init_world(world, transforms, targets_distance, params);
+        init_world(ranluxcltab, world, transforms, targets_distance, params);
 
         for (rid = 0; rid < ROBOTS_PER_WORLD; rid++)
         {
             world->robots[rid].id = rid;
-            init_robot(world, transforms, &world->robots[rid]);
-            set_random_position(world, transforms, &world->robots[rid], &random_positions[world->id * (ROBOTS_PER_WORLD * 10) + rid * 10]);
+            init_robot(ranluxcltab, world, transforms, &world->robots[rid]);
         }
     }
 
@@ -249,11 +254,14 @@ void simulate(__global world_t *worlds,
 #endif
 }
 
-void init_world(__global world_t *world,
+void init_world(__global ranluxcl_state_t *ranluxcltab,
+                __global world_t *world,
                 __local transform_t *transforms,
                 float targets_distance,
                 __global float *params)
 {
+    ranluxcl_state_t ranluxclstate;
+
     // walls
     world->arena_height = ARENA_HEIGHT;
     world->arena_width = ARENA_WIDTH_MIN + (get_global_id(0) / NUM_WORLDS) * (ARENA_WIDTH_MAX - ARENA_WIDTH_MIN);
@@ -278,15 +286,59 @@ void init_world(__global world_t *world,
     world->walls[3].p2.x = world->arena_width / 2;
     world->walls[3].p2.y = -world->arena_height / 2;
 
-    // target areas
-    // float x = sqrt(pow((targets_distance / 2.0), 2) / 2.0);
+    world->target_areas[0].radius = TARGET_AREAS_RADIUS;
+    world->target_areas[1].radius = TARGET_AREAS_RADIUS;
+
+#ifdef RANDOM_TARGET_AREAS
+    ranluxcl_download_seed(&ranluxclstate, ranluxcltab);
+    float4 random = ranluxcl32(&ranluxclstate);
+    ranluxcl_upload_seed(&ranluxclstate, ranluxcltab);
+
+    float max_x = (world->arena_width / 2) - TARGET_AREAS_RADIUS;
+    float max_y = (world->arena_height / 2) - TARGET_AREAS_RADIUS;
+    world->target_areas[0].center.x = (random.s0 * 2 * max_x) - max_x;
+    world->target_areas[0].center.y = (random.s1 * 2 * max_y) - max_y;
+
+    float gap_width = targets_distance + TARGET_AREAS_RADIUS - (world->arena_width / 2);
+    float gap_height = targets_distance + TARGET_AREAS_RADIUS - (world->arena_height / 2);
+
+    if (gap_width > 0)
+    {
+        if ((world->target_areas[0].center.x >= 0) && (world->target_areas[0].center.x < gap_width))
+            world->target_areas[0].center.x = gap_width;
+        else if ((world->target_areas[0].center.x < 0) && (world->target_areas[0].center.x > (-gap_width)))
+            world->target_areas[0].center.x = -gap_width;
+    }
+
+    if (gap_height > 0)
+    {
+        if ((world->target_areas[0].center.y >= 0) && (world->target_areas[0].center.y < gap_height))
+            world->target_areas[0].center.y = gap_height;
+        else if ((world->target_areas[0].center.y < 0) && (world->target_areas[0].center.y > (-gap_height)))
+            world->target_areas[0].center.y = -gap_height;
+    }
+
+    float random_angle = random.s2 * M_PI / 2;
+
+    if ((world->target_areas[0].center.x > 0) && (world->target_areas[0].center.y > 0)) // first quadrant
+        random_angle += M_PI;
+    else if ((world->target_areas[0].center.x < 0) && (world->target_areas[0].center.y > 0)) // second quadrant
+        random_angle += 3*M_PI/2;
+    else if ((world->target_areas[0].center.x < 0) && (world->target_areas[0].center.y < 0)) // third quadrant
+        random_angle += 0;
+    else if ((world->target_areas[0].center.x > 0) && (world->target_areas[0].center.y < 0)) // third quadrant
+        random_angle += M_PI/2;
+    else // exactly center
+        random_angle *= 4;
+
+    world->target_areas[1].center.x = world->target_areas[0].center.x + cos(random_angle) * targets_distance;
+    world->target_areas[1].center.y = world->target_areas[0].center.y + sin(random_angle) * targets_distance;
+#else
     world->target_areas[0].center.x = 0;
     world->target_areas[0].center.y = targets_distance / 2;
     world->target_areas[1].center.x = 0;
     world->target_areas[1].center.y = -targets_distance / 2;
-
-    world->target_areas[0].radius = TARGET_AREAS_RADIUS;
-    world->target_areas[1].radius = TARGET_AREAS_RADIUS;
+#endif
 
     unsigned int i, j, p = 0;
 
@@ -308,7 +360,10 @@ void init_world(__global world_t *world,
     }
 }
 
-void init_robot(__global world_t *world, __local transform_t *transforms, __global robot_t *robot)
+void init_robot(__global ranluxcl_state_t *ranluxcltab,
+                __global world_t *world,
+                __local transform_t *transforms,
+                __global robot_t *robot)
 {
     unsigned int i;
 
@@ -331,6 +386,8 @@ void init_robot(__global world_t *world, __local transform_t *transforms, __glob
     for (i=0; i<NUM_HIDDEN; i++)
         robot->hidden[i] = 0;
 
+    set_random_position(ranluxcltab, world, transforms, robot);
+
 #ifdef TEST
     if (robot->id == 0) {
         transforms[robot->id].pos.x = 0;
@@ -352,20 +409,26 @@ void init_robot(__global world_t *world, __local transform_t *transforms, __glob
 #endif
 }
 
-void set_random_position(__global world_t *world, __local transform_t *transforms, __global robot_t *robot, __global float4 *random_positions)
+void set_random_position(__global ranluxcl_state_t *ranluxcltab,
+                         __global world_t *world,
+                         __local transform_t *transforms,
+                         __global robot_t *robot)
 {
-    int otherid, i, collision = 1, offset = 0;
+    int otherid, i, collision = 1, tries = 0;
 
-    while ((collision == 1) && (offset < 10))
+    ranluxcl_state_t ranluxclstate;
+    ranluxcl_download_seed(&ranluxclstate, ranluxcltab);
+
+    while ((collision == 1) && (tries < 10))
     {
-        float4 random = random_positions[offset++];
+        float4 random = ranluxcl32(&ranluxclstate);
 
         float max_x = (world->arena_width / 2) - ROBOT_BODY_RADIUS;
         float max_y = (world->arena_height / 2) - ROBOT_BODY_RADIUS;
         transforms[robot->id].pos.x = (random.s0 * 2 * max_x) - max_x;
         transforms[robot->id].pos.y = (random.s1 * 2 * max_y) - max_y;
-        transforms[robot->id].rot.sin = random.s2 * 2 - 1;
-        transforms[robot->id].rot.cos = random.s3 * 2 - 1;
+        transforms[robot->id].rot.sin = sin(random.s2 * 2 * M_PI);
+        transforms[robot->id].rot.cos = cos(random.s2 * 2 * M_PI);
 
         robot->previous_transform.pos.x = transforms[robot->id].pos.x;
         robot->previous_transform.pos.y = transforms[robot->id].pos.y;
@@ -400,7 +463,11 @@ void set_random_position(__global world_t *world, __local transform_t *transform
                 break;
             }
         }
+
+        tries++;
     }
+
+    ranluxcl_upload_seed(&ranluxclstate, ranluxcltab);
 }
 
 void step_actuators(__global world_t *world, __local transform_t *transforms, __global robot_t *robot)
