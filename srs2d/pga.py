@@ -115,6 +115,7 @@ def main():
         'POPULATION_SIZE': args.population_size,
         'D': args.distances,
         'TRIALS': args.trials,
+        'FIXED_TARGETS': 1 if args.fixed_targets else 0
     }, code_version=git_version)
 
     for run in inst.runs:
