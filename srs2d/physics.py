@@ -34,6 +34,8 @@ NUM_SENSORS = 13
 NUM_ACTUATORS = 4
 NUM_HIDDEN = 3
 
+ANN_PARAMS_SIZE = 113
+
 class Simulator(object):
     def __init__(self, context, queue, num_worlds=1, num_robots=9, ta=600, tb=5400, time_step=1/10.0, test=False, random_targets=True):
         self.context = context

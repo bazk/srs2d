@@ -33,8 +33,6 @@ import numpy as np
 import math
 import tempfile
 
-ANN_PARAMS_SIZE = 113
-
 logging.basicConfig(format='[ %(asctime)s ] [%(levelname)s] %(message)s')
 __log__ = logging.getLogger(__name__)
 
@@ -123,7 +121,7 @@ class DiscretePSO(object):
         self.gbest = None
         self.gbest_fitness = None
 
-        self.particles = [ Particle(ANN_PARAMS_SIZE, args.inertia, args.alfa, args.beta) for i in range(args.population_size) ]
+        self.particles = [ Particle(physics.ANN_PARAMS_SIZE, args.inertia, args.alfa, args.beta) for i in range(args.population_size) ]
 
         self.simulator = physics.Simulator(self.context, self.queue,
                                            num_worlds=args.population_size,

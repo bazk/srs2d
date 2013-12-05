@@ -34,8 +34,6 @@ import ga
 import Queue
 import threading
 
-ANN_PARAMS_SIZE = 113
-
 logging.basicConfig(format='[ %(asctime)s ] [%(levelname)s] %(message)s')
 __log__ = logging.getLogger(__name__)
 

@@ -33,8 +33,6 @@ import math
 import numpy as np
 import time
 
-ANN_PARAMS_SIZE = 113
-
 logging.basicConfig(format='[ %(asctime)s ] [%(levelname)s] %(message)s')
 __log__ = logging.getLogger(__name__)
 
@@ -122,7 +120,7 @@ class GA(object):
         self.queue = queue
         self.args = args
 
-        self.population = [ Individual(ANN_PARAMS_SIZE) for i in range(args.population_size) ]
+        self.population = [ Individual(physics.ANN_PARAMS_SIZE) for i in range(args.population_size) ]
         self.simulator = physics.Simulator(self.context, self.queue,
                                            num_worlds=args.population_size,
                                            num_robots=args.num_robots,

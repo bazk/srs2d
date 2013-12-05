@@ -24,8 +24,6 @@ import random
 import pyopencl as cl
 import numpy as np
 
-ANN_PARAMS_SIZE = 113
-
 class TestSimulator(object):
     def run(self, args):
         device_type = cl.device_type.ALL
@@ -45,7 +43,7 @@ class TestSimulator(object):
             pos = args.params.decode('hex')
         else:
             pos = ''
-            for i in xrange(ANN_PARAMS_SIZE):
+            for i in xrange(physics.ANN_PARAMS_SIZE):
                 pos += chr(random.randint(0,255))
 
         decoded = np.zeros(len(pos))
