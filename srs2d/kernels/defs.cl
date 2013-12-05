@@ -98,10 +98,10 @@ typedef struct {
     target_area_t target_areas[2];
 
     // ANN parameters
-    float weights[NUM_ACTUATORS*(NUM_SENSORS+NUM_HIDDEN)];
+    float weights[NUM_ACTUATORS][NUM_SENSORS+NUM_HIDDEN];
     float bias[NUM_ACTUATORS];
 
-    float weights_hidden[NUM_HIDDEN*NUM_SENSORS];
+    float weights_hidden[NUM_HIDDEN][NUM_SENSORS];
     float bias_hidden[NUM_HIDDEN];
     float timec_hidden[NUM_HIDDEN];
 } world_t;

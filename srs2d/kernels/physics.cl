@@ -345,7 +345,7 @@ void init_world(__global ranluxcl_state_t *ranluxcltab,
     for (i=0; i<NUM_ACTUATORS; i++)
     {
         for (j=0; j<(NUM_SENSORS+NUM_HIDDEN); j++)
-            world->weights[i*(NUM_SENSORS+NUM_HIDDEN)+j] = scale_param(params[p++], WEIGHTS_BOUNDARY_L, WEIGHTS_BOUNDARY_H);
+            world->weights[i][j] = scale_param(params[p++], WEIGHTS_BOUNDARY_L, WEIGHTS_BOUNDARY_H);
 
         world->bias[i] = scale_param(params[p++], BIAS_BOUNDARY_L, BIAS_BOUNDARY_H);
     }
@@ -353,7 +353,7 @@ void init_world(__global ranluxcl_state_t *ranluxcltab,
     for (i=0; i<NUM_HIDDEN; i++)
     {
         for (j=0; j<NUM_SENSORS; j++)
-            world->weights_hidden[i*NUM_SENSORS+j] = scale_param(params[p++], WEIGHTS_BOUNDARY_L, WEIGHTS_BOUNDARY_H);
+            world->weights_hidden[i][j] = scale_param(params[p++], WEIGHTS_BOUNDARY_L, WEIGHTS_BOUNDARY_H);
 
         world->bias_hidden[i] = scale_param(params[p++], BIAS_BOUNDARY_L, BIAS_BOUNDARY_H);
         world->timec_hidden[i] = scale_param(params[p++], TIMEC_BOUNDARY_L, TIMEC_BOUNDARY_H);
@@ -685,7 +685,7 @@ void step_controllers(__global world_t *world, __local transform_t *transforms, 
         aux = 0;
 
         for (s=0; s<NUM_SENSORS; s++)
-            aux += world->weights_hidden[h*NUM_SENSORS+s] * robot->sensors[s];
+            aux += world->weights_hidden[h][s] * robot->sensors[s];
 
         aux += world->bias_hidden[h];
 
@@ -697,10 +697,10 @@ void step_controllers(__global world_t *world, __local transform_t *transforms, 
         aux = 0;
 
         for (s=0; s<NUM_SENSORS; s++)
-            aux += world->weights[a*(NUM_SENSORS+NUM_HIDDEN)+s] * robot->sensors[s];
+            aux += world->weights[a][s] * robot->sensors[s];
 
         for (h=0; h<NUM_HIDDEN; h++)
-            aux += world->weights[a*(NUM_SENSORS+NUM_HIDDEN)+NUM_SENSORS+h] * robot->hidden[h];
+            aux += world->weights[a][NUM_SENSORS+h] * robot->hidden[h];
 
         aux += world->bias[a];
 
