@@ -59,7 +59,7 @@ class TestPerfSimulator(object):
 
         for i in xrange(args.num_trials):
             start = time.time()
-            simulator.simulate(args.distance, [ decoded for i in xrange(args.num_worlds) ])
+            simulator.simulate([ decoded for i in xrange(args.num_worlds) ], targets_distance=args.targets_distance)
             end = time.time()
 
             times.append(end - start)
@@ -71,7 +71,7 @@ if __name__=="__main__":
     parser.add_argument("--device-type", help="device type (all, gpu or cpu), default is all", type=str, default='all')
     parser.add_argument("-s", "--save", help="save the simulation to a file", metavar="FILE")
     parser.add_argument("-p", "--params", help="parameters for the neural network", metavar="ANNPARAMS")
-    parser.add_argument("-d", "--distance", type=float, help="distance between target areas", default=0.7)
+    parser.add_argument("-d", "--targets-distance", type=float, help="distance between target areas", default=0.7)
     parser.add_argument("-w", "--num-worlds", type=int, help="number of worlds in the simulation", default=120)
     parser.add_argument("-n", "--num-robots", type=int, help="number of robots in each world", default=10)
     parser.add_argument("-t", "--num-trials", type=int, help="number of trials", default=10)

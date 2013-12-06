@@ -166,9 +166,9 @@ class PSO(object):
                 _, filename = tempfile.mkstemp(prefix='pso_sim_', suffix='.srs')
 
                 fitness = self.simulator.simulate_and_save(
-                    args.distances[ random.randint(0, len(args.distances)-1) ],
+                    filename,
                     [ self.gbest.position_decoded for i in xrange(len(self.particles)) ],
-                    filename
+                    targets_distance=args.distances[ random.randint(0, len(args.distances)-1) ]
                 )
 
                 run.upload(filename, 'run-%02d-new-gbest-gen-%04d-fit-%.4f.srs' % (run.id, generation, fitness[0]) )
@@ -184,7 +184,7 @@ class PSO(object):
 
         for d in distances:
             for t in range(trials):
-                fitness = self.simulator.simulate(d, [ p.position_decoded for p in self.particles ])
+                fitness = self.simulator.simulate([ p.position_decoded for p in self.particles ], targets_distance=d)
 
                 for i in xrange(len(self.particles)):
                     self.particles[i].fitness += fitness[i]

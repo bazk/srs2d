@@ -260,8 +260,6 @@ void init_world(__global ranluxcl_state_t *ranluxcltab,
                 float targets_distance,
                 __global float *params)
 {
-    ranluxcl_state_t ranluxclstate;
-
     // walls
     world->arena_height = ARENA_HEIGHT;
     world->arena_width = ARENA_WIDTH_MIN + (get_global_id(0) / NUM_WORLDS) * (ARENA_WIDTH_MAX - ARENA_WIDTH_MIN);
@@ -290,6 +288,8 @@ void init_world(__global ranluxcl_state_t *ranluxcltab,
     world->target_areas[1].radius = TARGET_AREAS_RADIUS;
 
 #ifdef RANDOM_TARGET_AREAS
+    ranluxcl_state_t ranluxclstate;
+
     ranluxcl_download_seed(&ranluxclstate, ranluxcltab);
     float4 random = ranluxcl32(&ranluxclstate);
     ranluxcl_upload_seed(&ranluxclstate, ranluxcltab);

@@ -113,7 +113,7 @@ class Simulator(object):
         cl.enqueue_copy(queue, sizeof, sizeof_buf).wait()
         return int(sizeof[0])
 
-    def simulate(self, targets_distance, param_list, save_hist=False):
+    def simulate(self, param_list, targets_distance=1.0, save_hist=False):
         if len(param_list) != self.num_worlds:
             raise Exception('Number of parameters is not equal to the number of worlds!')
 
@@ -214,8 +214,8 @@ class Simulator(object):
         else:
             return fitness
 
-    def simulate_and_save(self, targets_distance, param_list, filename):
-        fitness, hist = self.simulate(targets_distance, param_list, save_hist=True)
+    def simulate_and_save(self, filename, param_list, **kwargs):
+        fitness, hist = self.simulate(param_list, save_hist=True, **kwargs)
 
         ( robot_radius, arena_size, target_areas_pos, target_areas_radius,
           fitness_hist, energy_hist, transform_hist,

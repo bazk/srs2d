@@ -51,10 +51,10 @@ class TestSimulator(object):
             decoded[i] = float(ord(pos[i])) / 255
 
         if args.save is None:
-            fitness = simulator.simulate(args.distance, [ decoded for i in xrange(args.num_worlds) ])
+            fitness = simulator.simulate([ decoded for i in xrange(args.num_worlds) ], targets_distance=args.targets_distance)
 
         else:
-            fitness = simulator.simulate_and_save(args.distance, [ decoded for i in xrange(args.num_worlds) ], args.save)
+            fitness = simulator.simulate_and_save(args.save, [ decoded for i in xrange(args.num_worlds) ], targets_distance=args.targets_distance)
 
         print 'fitness = ', fitness[0]
 
@@ -63,7 +63,7 @@ if __name__=="__main__":
     parser.add_argument("--device-type", help="device type (all, gpu or cpu), default is all", type=str, default='all')
     parser.add_argument("-s", "--save", help="save the simulation to a file", metavar="FILE")
     parser.add_argument("-p", "--params", help="parameters for the neural network", metavar="ANNPARAMS")
-    parser.add_argument("-d", "--distance", type=float, help="distance between target areas", default=0.7)
+    parser.add_argument("-d", "--targets-distance", type=float, help="distance between target areas", default=0.7)
     parser.add_argument("-w", "--num-worlds", type=int, help="number of worlds in the simulation", default=120)
     parser.add_argument("-n", "--num-robots", type=int, help="number of robots in the simulation", default=10)
     parser.add_argument("--ta", type=int, help="number of timesteps without fitness avaliation", default=18600)

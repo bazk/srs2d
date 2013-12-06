@@ -199,9 +199,9 @@ class PGA:
                     _, filename = tempfile.mkstemp(prefix='sim_', suffix='.srs')
 
                     fitness = self.archipelago[1].simulator.simulate_and_save(
-                        self.args.distances[ random.randint(0, len(self.args.distances)-1) ],
+                        filename,
                         [ self.best.genome_decoded for i in xrange(self.args.population_size) ],
-                        filename
+                        targets_distance=self.args.distances[ random.randint(0, len(self.args.distances)-1) ]
                     )
 
                     run.upload(filename, 'run-%02d-new-best-gen-%04d-fit-%.4f.srs' % (run.id, generation, fitness[0]) )

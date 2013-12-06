@@ -163,9 +163,9 @@ class GA(object):
                     _, filename = tempfile.mkstemp(prefix='sim_', suffix='.srs')
 
                     fitness = self.simulator.simulate_and_save(
-                        self.args.distances[ random.randint(0, len(self.args.distances)-1) ],
+                        filename,
                         [ self.best.genome_decoded for i in xrange(len(self.population)) ],
-                        filename
+                        targets_distance=self.args.distances[ random.randint(0, len(self.args.distances)-1) ]
                     )
 
                     run.upload(filename, 'run-%02d-new-best-gen-%04d-fit-%.4f.srs' % (run.id, generation, fitness[0]) )
@@ -236,7 +236,7 @@ class GA(object):
 
         for d in distances:
             for t in range(trials):
-                fitness = self.simulator.simulate(d, [ ind.genome_decoded for ind in self.population ])
+                fitness = self.simulator.simulate([ ind.genome_decoded for ind in self.population ], targets_distance=d)
 
                 for i in xrange(len(self.population)):
                     self.population[i].fitness += fitness[i]
