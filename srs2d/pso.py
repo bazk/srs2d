@@ -51,8 +51,11 @@ def main():
     parser.add_argument("-r", "--num-runs",         help="number of runs, default is 3", type=int, default=3)
     parser.add_argument("-n", "--num-robots",       help="number of robots, default is 10", type=int, default=10)
     parser.add_argument("-p", "--population-size",  help="PSO population size (particles), default is 10", type=int, default=10)
-    parser.add_argument("-d", "--distances",        help="list of distances between target areas to be evaluated each generation, default is 0.7 0.9 1.1 1.3 1.5", type=float, nargs='+', default=[0.7, 0.9, 1.1, 1.3, 1.5])
-    parser.add_argument("--fixed-targets",          help="targets will always be in the same position", action="store_true")
+    parser.add_argument("--targets-distances",      help="list of distances between target areas to be evaluated \
+        each generation, default is 0.7 0.9 1.1 1.3 1.5", type=float, nargs='+', default=[0.7, 0.9, 1.1, 1.3, 1.5])
+    parser.add_argument("--targets-angles",         help="list of axis angles where the target areas \
+        are located each trial (between 0 and PI), default is [3*pi/4]", type=float, nargs='+', default=[2.356194490192345])
+    parser.add_argument("--random-targets",         help="place targets at random position (obeying targets distances)", action="store_true")
     parser.add_argument("-t", "--trials",           help="number of trials per distance, default is 3", type=int, default=3)
     args = parser.parse_args()
 
@@ -100,9 +103,10 @@ def main():
         'NUM_RUNS': args.num_runs,
         'NUM_ROBOTS': args.num_robots,
         'POPULATION_SIZE': args.population_size,
-        'D': args.distances,
+        'TARGETS_DISTANCES': args.targets_distances,
+        'TARGETS_ANGLES': args.targets_angles,
         'TRIALS': args.trials,
-        'FIXED_TARGETS': 1 if args.fixed_targets else 0
+        'RANDOM_TARGETS': 1 if args.random_targets else 0
     }, code_version=git_version)
 
     for run in inst.runs:
@@ -126,12 +130,12 @@ class PSO(object):
         self.simulator = physics.Simulator(self.context, self.queue,
                                            num_worlds=args.population_size,
                                            num_robots=args.num_robots,
-                                           ta=args.ta, tb=args.tb, random_targets=(not args.fixed_targets))
+                                           ta=args.ta, tb=args.tb, random_targets=args.random_targets)
 
         generation = 1
         while (generation <= args.num_generations):
             __log__.info('[gen=%d] Evaluating particles...', generation)
-            self.evaluate(args.distances, args.trials)
+            self.evaluate(args.targets_distances, args.targets_angles, args.trials)
 
             __log__.info('[gen=%d] Updating particles...', generation)
             for p in self.particles:
@@ -168,7 +172,8 @@ class PSO(object):
                 fitness = self.simulator.simulate_and_save(
                     filename,
                     [ self.gbest.position_decoded for i in xrange(len(self.particles)) ],
-                    targets_distance=args.distances[ random.randint(0, len(args.distances)-1) ]
+                    targets_distance=args.targets_distances[ random.randint(0, len(args.targets_distances)-1) ],
+                    targets_angle=args.targets_angles[ random.randint(0, len(args.targets_angles)-1) ]
                 )
 
                 run.upload(filename, 'run-%02d-new-gbest-gen-%04d-fit-%.4f.srs' % (run.id, generation, fitness[0]) )
@@ -178,19 +183,20 @@ class PSO(object):
 
         run.done()
 
-    def evaluate(self, distances, trials):
+    def evaluate(self, targets_distances, targets_angles, trials):
         for p in self.particles:
             p.fitness = 0.0
 
-        for d in distances:
-            for t in range(trials):
-                fitness = self.simulator.simulate([ p.position_decoded for p in self.particles ], targets_distance=d)
+        for d in targets_distances:
+            for a in targets_angles:
+                for t in range(trials):
+                    fitness = self.simulator.simulate([ p.position_decoded for p in self.particles ], targets_distance=d, targets_angle=a)
 
-                for i in xrange(len(self.particles)):
-                    self.particles[i].fitness += fitness[i]
+                    for i in xrange(len(self.particles)):
+                        self.particles[i].fitness += fitness[i]
 
         for p in self.particles:
-            p.fitness /= len(distances) * trials
+            p.fitness /= len(targets_distances) * len(targets_angles) * trials
 
     def generate_image(self, filename, block_width=8, block_height=8):
         blocks = [ [] for p in xrange(len(self.particles)) ]

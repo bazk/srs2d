@@ -113,7 +113,7 @@ class Simulator(object):
         cl.enqueue_copy(queue, sizeof, sizeof_buf).wait()
         return int(sizeof[0])
 
-    def simulate(self, param_list, targets_distance=1.0, save_hist=False):
+    def simulate(self, param_list, targets_distance=1.0, targets_angle=2.356194490192345, save_hist=False):
         if len(param_list) != self.num_worlds:
             raise Exception('Number of parameters is not equal to the number of worlds!')
 
@@ -158,7 +158,7 @@ class Simulator(object):
 
         simulate = self.prg.simulate
         simulate.set_scalar_arg_dtypes((None,
-                                        None, np.float32,
+                                        None, np.float32, np.float32,
                                         None, np.uint32,
                                         None,
                                         None, None,
@@ -168,7 +168,7 @@ class Simulator(object):
                                         np.uint32))
         simulate(self.queue, self.global_size, self.local_size,
                  ranluxcltab,
-                 self.worlds, targets_distance,
+                 self.worlds, targets_distance, targets_angle,
                  param_buf, len(param_list[0]),
                  fitness_buf,
                  robot_radius_buf, arena_size_buf,

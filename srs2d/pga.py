@@ -50,8 +50,11 @@ def main():
     parser.add_argument("-r", "--num-runs",         help="number of runs, default is 3", type=int, default=3)
     parser.add_argument("-n", "--num-robots",       help="number of robots, default is 10", type=int, default=10)
     parser.add_argument("-p", "--population-size",  help="population size (genomes), default is 120", type=int, default=120)
-    parser.add_argument("-d", "--distances",        help="list of distances between target areas to be evaluated each generation, default is 0.7 0.9 1.1 1.3 1.5", type=float, nargs='+', default=[0.7, 0.9, 1.1, 1.3, 1.5])
-    parser.add_argument("--fixed-targets",          help="targets will always be in the same position", action="store_true")
+    parser.add_argument("--targets-distances",      help="list of distances between target areas to be evaluated \
+        each generation, default is 0.7 0.9 1.1 1.3 1.5", type=float, nargs='+', default=[0.7, 0.9, 1.1, 1.3, 1.5])
+    parser.add_argument("--targets-angles",         help="list of axis angles where the target areas \
+        are located each trial (between 0 and PI), default is [3*pi/4]", type=float, nargs='+', default=[2.356194490192345])
+    parser.add_argument("--random-targets",         help="place targets at random position (obeying targets distances)", action="store_true")
     parser.add_argument("-t", "--trials",           help="number of trials per distance, default is 3", type=int, default=3)
     parser.add_argument("-c", "--pcrossover",       help="probability of crossover, default is 0.9", type=float, default=0.9)
     parser.add_argument("-m", "--pmutation",        help="probability of mutation, default is 0.03", type=float, default=0.03)
@@ -111,9 +114,10 @@ def main():
         'NUM_RUNS': args.num_runs,
         'NUM_ROBOTS': args.num_robots,
         'POPULATION_SIZE': args.population_size,
-        'D': args.distances,
+        'TARGETS_DISTANCES': args.targets_distances,
+        'TARGETS_ANGLES': args.targets_angles,
         'TRIALS': args.trials,
-        'FIXED_TARGETS': 1 if args.fixed_targets else 0
+        'RANDOM_TARGETS': 1 if args.random_targets else 0
     }, code_version=git_version)
 
     for run in inst.runs:
@@ -201,7 +205,8 @@ class PGA:
                     fitness = self.archipelago[1].simulator.simulate_and_save(
                         filename,
                         [ self.best.genome_decoded for i in xrange(self.args.population_size) ],
-                        targets_distance=self.args.distances[ random.randint(0, len(self.args.distances)-1) ]
+                        targets_distance=self.args.targets_distances[ random.randint(0, len(self.args.targets_distances)-1) ],
+                        targets_angle=self.args.targets_angles[ random.randint(0, len(self.args.targets_angles)-1) ]
                     )
 
                     run.upload(filename, 'run-%02d-new-best-gen-%04d-fit-%.4f.srs' % (run.id, generation, fitness[0]) )

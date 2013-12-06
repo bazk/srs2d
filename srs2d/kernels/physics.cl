@@ -12,7 +12,7 @@
 
 #include <ranluxcl.cl>
 
-void init_world(__global ranluxcl_state_t *ranluxcltab, __global world_t *world, __local transform_t *transforms, float targets_distance, __global float *params);
+void init_world(__global ranluxcl_state_t *ranluxcltab, __global world_t *world, __local transform_t *transforms, float targets_distance, float targets_angle, __global float *params);
 void init_robot(__global ranluxcl_state_t *ranluxcltab, __global world_t *world, __local transform_t *transforms, __global robot_t *robot);
 void set_random_position(__global ranluxcl_state_t *ranluxcltab, __global world_t *world, __local transform_t *transforms, __global robot_t *robot);
 void step_actuators(__global world_t *world, __local transform_t *transforms, __global robot_t *robot);
@@ -31,6 +31,7 @@ __attribute__((reqd_work_group_size(WORLDS_PER_LOCAL, ROBOTS_PER_LOCAL, 1)))
 void simulate(__global ranluxcl_state_t *ranluxcltab,
               __global world_t *worlds,
               float targets_distance,
+              float targets_angle,
               __global float *param_list,
               unsigned int param_size,
 
@@ -68,7 +69,7 @@ void simulate(__global ranluxcl_state_t *ranluxcltab,
 
 #ifdef WORK_ITEMS_ARE_WORLDS
     world->id = get_global_id(0);
-    init_world(ranluxcltab, world, transforms, targets_distance, params);
+    init_world(ranluxcltab, world, transforms, targets_distance, targets_angle, params);
 
     for (rid = 0; rid < ROBOTS_PER_WORLD; rid++)
     {
@@ -161,7 +162,7 @@ void simulate(__global ranluxcl_state_t *ranluxcltab,
     if (get_global_id(1) == 0)
     {
         world->id = get_global_id(0);
-        init_world(ranluxcltab, world, transforms, targets_distance, params);
+        init_world(ranluxcltab, world, transforms, targets_distance, targets_angle, params);
 
         for (rid = 0; rid < ROBOTS_PER_WORLD; rid++)
         {
@@ -258,6 +259,7 @@ void init_world(__global ranluxcl_state_t *ranluxcltab,
                 __global world_t *world,
                 __local transform_t *transforms,
                 float targets_distance,
+                float targets_angle,
                 __global float *params)
 {
     // walls
@@ -334,10 +336,10 @@ void init_world(__global ranluxcl_state_t *ranluxcltab,
     world->target_areas[1].center.x = world->target_areas[0].center.x + cos(random_angle) * targets_distance;
     world->target_areas[1].center.y = world->target_areas[0].center.y + sin(random_angle) * targets_distance;
 #else
-    world->target_areas[0].center.x = 0;
-    world->target_areas[0].center.y = targets_distance / 2;
-    world->target_areas[1].center.x = 0;
-    world->target_areas[1].center.y = -targets_distance / 2;
+    world->target_areas[0].center.x = cos(targets_angle) * (targets_distance / 2);
+    world->target_areas[0].center.y = sin(targets_angle) * (targets_distance / 2);
+    world->target_areas[1].center.x = -cos(targets_angle) * (targets_distance / 2);
+    world->target_areas[1].center.y = -sin(targets_angle) * (targets_distance / 2);
 #endif
 
     unsigned int i, j, p = 0;
