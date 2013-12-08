@@ -55,12 +55,6 @@ void simulate(__global ranluxcl_state_t *ranluxcltab,
     unsigned int cur = 0;
     unsigned int rid;
 
-    // k = number of time steps needed for a robot to consume one unit of energy while moving at maximum speed
-    float k = (targets_distance / (2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS)) / TIME_STEP;
-
-    // max_trips = maximum number of trips a robot, at maximum speed, can perform during a simulation of TB time steps
-    int max_trips = (int) floor( ((2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS) * TB * TIME_STEP) / targets_distance );
-
     __global world_t *world = &worlds[get_global_id(0)];
     __global robot_t *robot = &world->robots[get_global_id(1)];
 
@@ -76,6 +70,12 @@ void simulate(__global ranluxcl_state_t *ranluxcltab,
         world->robots[rid].id = rid;
         init_robot(ranluxcltab, world, transforms, &world->robots[rid]);
     }
+
+    // k = number of time steps needed for a robot to consume one unit of energy while moving at maximum speed
+    float k = (world->targets_distance / (2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS)) / TIME_STEP;
+
+    // max_trips = maximum number of trips a robot, at maximum speed, can perform during a simulation of TB time steps
+    int max_trips = (int) floor( ((2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS) * TB * TIME_STEP) / world->targets_distance );
 
     while (cur < (TA + TB))
     {
@@ -172,6 +172,12 @@ void simulate(__global ranluxcl_state_t *ranluxcltab,
     }
 
     barrier(CLK_GLOBAL_MEM_FENCE);
+
+    // k = number of time steps needed for a robot to consume one unit of energy while moving at maximum speed
+    float k = (world->targets_distance / (2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS)) / TIME_STEP;
+
+    // max_trips = maximum number of trips a robot, at maximum speed, can perform during a simulation of TB time steps
+    int max_trips = (int) floor( ((2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS) * TB * TIME_STEP) / world->targets_distance );
 
     while (cur < (TA + TB))
     {
@@ -296,13 +302,15 @@ void init_world(__global ranluxcl_state_t *ranluxcltab,
     float4 random = ranluxcl32(&ranluxclstate);
     ranluxcl_upload_seed(&ranluxclstate, ranluxcltab);
 
+    world->targets_distance = (random.s3 * 0.8) + 0.7;
+
     float max_x = (world->arena_width / 2) - TARGET_AREAS_RADIUS;
     float max_y = (world->arena_height / 2) - TARGET_AREAS_RADIUS;
     world->target_areas[0].center.x = (random.s0 * 2 * max_x) - max_x;
     world->target_areas[0].center.y = (random.s1 * 2 * max_y) - max_y;
 
-    float gap_width = targets_distance + TARGET_AREAS_RADIUS - (world->arena_width / 2);
-    float gap_height = targets_distance + TARGET_AREAS_RADIUS - (world->arena_height / 2);
+    float gap_width = world->targets_distance + TARGET_AREAS_RADIUS - (world->arena_width / 2);
+    float gap_height = world->targets_distance + TARGET_AREAS_RADIUS - (world->arena_height / 2);
 
     if (gap_width > 0)
     {
@@ -333,9 +341,10 @@ void init_world(__global ranluxcl_state_t *ranluxcltab,
     else // exactly center
         random_angle *= 4;
 
-    world->target_areas[1].center.x = world->target_areas[0].center.x + cos(random_angle) * targets_distance;
-    world->target_areas[1].center.y = world->target_areas[0].center.y + sin(random_angle) * targets_distance;
+    world->target_areas[1].center.x = world->target_areas[0].center.x + cos(random_angle) * world->targets_distance;
+    world->target_areas[1].center.y = world->target_areas[0].center.y + sin(random_angle) * world->targets_distance;
 #else
+    world->targets_distance = targets_distance;
     world->target_areas[0].center.x = cos(targets_angle) * (targets_distance / 2);
     world->target_areas[0].center.y = sin(targets_angle) * (targets_distance / 2);
     world->target_areas[1].center.x = -cos(targets_angle) * (targets_distance / 2);
