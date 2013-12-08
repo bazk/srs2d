@@ -169,8 +169,8 @@ class GA(object):
                     fitness = self.simulator.simulate_and_save(
                         filename,
                         [ self.best.genome_decoded for i in xrange(len(self.population)) ],
-                        targets_distance=args.targets_distances[ random.randint(0, len(args.targets_distances)-1) ],
-                        targets_angle=args.targets_angles[ random.randint(0, len(args.targets_angles)-1) ]
+                        targets_distance=self.args.targets_distances[ random.randint(0, len(self.args.targets_distances)-1) ],
+                        targets_angle=self.args.targets_angles[ random.randint(0, len(self.args.targets_angles)-1) ]
                     )
 
                     run.upload(filename, 'run-%02d-new-best-gen-%04d-fit-%.4f.srs' % (run.id, generation, fitness[0]) )
