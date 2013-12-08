@@ -130,13 +130,7 @@ class PGA:
 
         self.archipelago = []
         for device in self.context.devices:
-            #n = args.islands_per_device
-
-            n = 2
-            if device.type == cl.device_type.GPU:
-                n = 6
-
-            for i in xrange(n):
+            for i in xrange(args.islands_per_device):
                 queue = cl.CommandQueue(context, device)
                 self.archipelago.append(ga.GA(self.context, queue, args))
 
