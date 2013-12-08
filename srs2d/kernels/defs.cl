@@ -106,6 +106,8 @@ typedef struct {
     float weights_hidden[NUM_HIDDEN][NUM_SENSORS];
     float bias_hidden[NUM_HIDDEN];
     float timec_hidden[NUM_HIDDEN];
+
+    unsigned int random_offset;
 } world_t;
 
 #endif

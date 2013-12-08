@@ -121,8 +121,8 @@ class Simulator(object):
         param[:] = param_list
         param_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=param)
 
-        # random_positions = np.random.rand(self.num_worlds, self.num_robots, 10, 4).astype(np.float32)
-        # random_positions_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=random_positions)
+        random_vector = np.random.rand(self.num_worlds * self.num_robots * 50).astype(np.float32)
+        random_vector_buf = cl.Buffer(self.context, cl.mem_flags.COPY_HOST_PTR, hostbuf=random_vector)
 
         fitness_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(4 * self.num_worlds))
 
@@ -151,11 +151,6 @@ class Simulator(object):
             actuators_hist_buf = None
             hidden_hist_buf = None
 
-        ranluxcltab = cl.Buffer(self.context, 0, self.num_worlds * self.num_robots * 112)
-        init_ranluxcl = self.prg.init_ranluxcl
-        init_ranluxcl.set_scalar_arg_dtypes((np.uint32, None))
-        init_ranluxcl(self.queue, self.global_size, self.local_size, np.random.randint(0, 4294967295), ranluxcltab).wait()
-
         simulate = self.prg.simulate
         simulate.set_scalar_arg_dtypes((None,
                                         None, np.float32, np.float32,
@@ -166,8 +161,9 @@ class Simulator(object):
                                         None, None, None,
                                         None, None, None,
                                         np.uint32))
+
         simulate(self.queue, self.global_size, self.local_size,
-                 ranluxcltab,
+                 random_vector_buf,
                  self.worlds, targets_distance, targets_angle,
                  param_buf, len(param_list[0]),
                  fitness_buf,
