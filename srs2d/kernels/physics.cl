@@ -65,10 +65,10 @@ void simulate(__global float *random,
     }
 
     // k = number of time steps needed for a robot to consume one unit of energy while moving at maximum speed
-    float k = (world->targets_distance / (2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS)) / TIME_STEP;
+    float k = (distance(world->target_areas[0].center, world->target_areas[1].center) / (2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS)) / TIME_STEP;
 
     // max_trips = maximum number of trips a robot, at maximum speed, can perform during a simulation of TB time steps
-    int max_trips = (int) floor( ((2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS) * TB * TIME_STEP) / world->targets_distance );
+    int max_trips = (int) floor( ((2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS) * TB * TIME_STEP) / distance(world->target_areas[0].center, world->target_areas[1].center) );
 
     while (cur < (TA + TB))
     {
@@ -167,10 +167,10 @@ void simulate(__global float *random,
     barrier(CLK_GLOBAL_MEM_FENCE);
 
     // k = number of time steps needed for a robot to consume one unit of energy while moving at maximum speed
-    float k = (world->targets_distance / (2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS)) / TIME_STEP;
+    float k = (distance(world->target_areas[0].center, world->target_areas[1].center) / (2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS)) / TIME_STEP;
 
     // max_trips = maximum number of trips a robot, at maximum speed, can perform during a simulation of TB time steps
-    int max_trips = (int) floor( ((2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS) * TB * TIME_STEP) / world->targets_distance );
+    int max_trips = (int) floor( ((2 * WHEELS_MAX_ANGULAR_SPEED * WHEELS_RADIUS) * TB * TIME_STEP) / distance(world->target_areas[0].center, world->target_areas[1].center) );
 
     while (cur < (TA + TB))
     {
@@ -291,15 +291,15 @@ void init_world(__global float *random,
     world->target_areas[1].radius = TARGET_AREAS_RADIUS;
 
 #ifdef RANDOM_TARGET_AREAS
-    world->targets_distance = (random[world->id*NUM_WORLDS+(world->random_offset++)] * 0.8) + 0.7;
+    targets_distance = (random[world->id*NUM_WORLDS+(world->random_offset++)] * 0.8) + 0.7;
 
     float max_x = (world->arena_width / 2) - TARGET_AREAS_RADIUS;
     float max_y = (world->arena_height / 2) - TARGET_AREAS_RADIUS;
     world->target_areas[0].center.x = (random[world->id*NUM_WORLDS+(world->random_offset++)] * 2 * max_x) - max_x;
     world->target_areas[0].center.y = (random[world->id*NUM_WORLDS+(world->random_offset++)] * 2 * max_y) - max_y;
 
-    float gap_width = world->targets_distance + TARGET_AREAS_RADIUS - (world->arena_width / 2);
-    float gap_height = world->targets_distance + TARGET_AREAS_RADIUS - (world->arena_height / 2);
+    float gap_width = targets_distance + TARGET_AREAS_RADIUS - (world->arena_width / 2);
+    float gap_height = targets_distance + TARGET_AREAS_RADIUS - (world->arena_height / 2);
 
     if (gap_width > 0)
     {
@@ -330,10 +330,9 @@ void init_world(__global float *random,
     else // exactly center
         random_angle *= 4;
 
-    world->target_areas[1].center.x = world->target_areas[0].center.x + cos(random_angle) * world->targets_distance;
-    world->target_areas[1].center.y = world->target_areas[0].center.y + sin(random_angle) * world->targets_distance;
+    world->target_areas[1].center.x = world->target_areas[0].center.x + cos(random_angle) * targets_distance;
+    world->target_areas[1].center.y = world->target_areas[0].center.y + sin(random_angle) * targets_distance;
 #else
-    world->targets_distance = targets_distance;
     world->target_areas[0].center.x = cos(targets_angle) * (targets_distance / 2);
     world->target_areas[0].center.y = sin(targets_angle) * (targets_distance / 2);
     world->target_areas[1].center.x = -cos(targets_angle) * (targets_distance / 2);

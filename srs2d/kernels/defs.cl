@@ -97,8 +97,6 @@ typedef struct {
     wall_t walls[4];
     target_area_t target_areas[2];
 
-    float targets_distance;
-
     // ANN parameters
     float weights[NUM_ACTUATORS][NUM_SENSORS+NUM_HIDDEN];
     float bias[NUM_ACTUATORS];
