@@ -56,7 +56,7 @@ class TestSimulator(object):
         else:
             fitness = simulator.simulate_and_save(args.save, [ decoded for i in xrange(args.num_worlds) ], targets_distance=args.targets_distance, targets_angle=args.targets_angle)
 
-        print 'fitness = ', fitness[0]
+        print 'fitness = ', fitness
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()

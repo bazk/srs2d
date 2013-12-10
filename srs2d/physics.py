@@ -127,17 +127,17 @@ class Simulator(object):
         fitness_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(4 * self.num_worlds))
 
         if save_hist:
-            robot_radius_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(4 * self.num_worlds))
-            arena_size_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(8 * self.num_worlds))
-            target_areas_pos_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(16 * self.num_worlds))
-            target_areas_radius_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(8 * self.num_worlds))
+            robot_radius_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=4)
+            arena_size_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=8)
+            target_areas_pos_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=16)
+            target_areas_radius_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=8)
 
-            fitness_hist_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(4 * (self.ta+self.tb) * self.num_worlds * self.num_robots))
-            energy_hist_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(4 * (self.ta+self.tb) * self.num_worlds * self.num_robots))
-            transform_hist_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(16 * (self.ta+self.tb) * self.num_worlds * self.num_robots))
-            sensors_hist_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(4 * (self.ta+self.tb) * self.num_worlds * self.num_robots * NUM_SENSORS))
-            actuators_hist_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(4 * (self.ta+self.tb) * self.num_worlds * self.num_robots * NUM_ACTUATORS))
-            hidden_hist_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(4 * (self.ta+self.tb) * self.num_worlds * self.num_robots * NUM_HIDDEN))
+            fitness_hist_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(4 * (self.ta+self.tb) * self.num_robots))
+            energy_hist_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(4 * (self.ta+self.tb) * self.num_robots))
+            transform_hist_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(16 * (self.ta+self.tb) * self.num_robots))
+            sensors_hist_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(4 * (self.ta+self.tb) * self.num_robots * NUM_SENSORS))
+            actuators_hist_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(4 * (self.ta+self.tb) * self.num_robots * NUM_ACTUATORS))
+            hidden_hist_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY, size=(4 * (self.ta+self.tb) * self.num_robots * NUM_HIDDEN))
         else:
             robot_radius_buf = None
             arena_size_buf = None
@@ -177,17 +177,17 @@ class Simulator(object):
         cl.enqueue_copy(self.queue, fitness, fitness_buf)
 
         if save_hist:
-            robot_radius = np.zeros((self.num_worlds), dtype=np.float32)
-            arena_size= np.zeros((self.num_worlds, 2), dtype=np.float32)
-            target_areas_pos = np.zeros((self.num_worlds, 2, 2), dtype=np.float32)
-            target_areas_radius = np.zeros((self.num_worlds, 2), dtype=np.float32)
+            robot_radius = np.zeros(1, dtype=np.float32)
+            arena_size= np.zeros(2, dtype=np.float32)
+            target_areas_pos = np.zeros((2, 2), dtype=np.float32)
+            target_areas_radius = np.zeros(2, dtype=np.float32)
 
-            fitness_hist = np.zeros((self.ta+self.tb, self.num_worlds, self.num_robots), dtype=np.float32)
-            energy_hist = np.zeros((self.ta+self.tb, self.num_worlds, self.num_robots), dtype=np.float32)
-            transform_hist = np.zeros((self.ta+self.tb, self.num_worlds, self.num_robots, 4), dtype=np.float32)
-            sensors_hist = np.zeros((self.ta+self.tb, self.num_worlds, self.num_robots, NUM_SENSORS), dtype=np.float32)
-            actuators_hist = np.zeros((self.ta+self.tb, self.num_worlds, self.num_robots, NUM_ACTUATORS), dtype=np.float32)
-            hidden_hist = np.zeros((self.ta+self.tb, self.num_worlds, self.num_robots, NUM_HIDDEN), dtype=np.float32)
+            fitness_hist = np.zeros((self.ta+self.tb, self.num_robots), dtype=np.float32)
+            energy_hist = np.zeros((self.ta+self.tb, self.num_robots), dtype=np.float32)
+            transform_hist = np.zeros((self.ta+self.tb, self.num_robots, 4), dtype=np.float32)
+            sensors_hist = np.zeros((self.ta+self.tb, self.num_robots, NUM_SENSORS), dtype=np.float32)
+            actuators_hist = np.zeros((self.ta+self.tb, self.num_robots, NUM_ACTUATORS), dtype=np.float32)
+            hidden_hist = np.zeros((self.ta+self.tb, self.num_robots, NUM_HIDDEN), dtype=np.float32)
 
             cl.enqueue_copy(self.queue, robot_radius, robot_radius_buf)
             cl.enqueue_copy(self.queue, arena_size, arena_size_buf)
@@ -221,48 +221,48 @@ class Simulator(object):
 
         world = 0
 
-        save_file.add_object('arena', io.SHAPE_RECTANGLE, x=0.0, y=0.0, width=arena_size[world][0], height=arena_size[world][1])
-        save_file.add_object('target0', io.SHAPE_CIRCLE, x=target_areas_pos[world][0][0], y=target_areas_pos[world][0][1],
-            radius=target_areas_radius[world][0], sin=0.0, cos=1.0)
-        save_file.add_object('target1', io.SHAPE_CIRCLE, x=target_areas_pos[world][1][0], y=target_areas_pos[world][1][1],
-            radius=target_areas_radius[world][1], sin=0.0, cos=1.0)
+        save_file.add_object('arena', io.SHAPE_RECTANGLE, x=0.0, y=0.0, width=arena_size[0], height=arena_size[1])
+        save_file.add_object('target0', io.SHAPE_CIRCLE, x=target_areas_pos[0][0], y=target_areas_pos[0][1],
+            radius=target_areas_radius[0], sin=0.0, cos=1.0)
+        save_file.add_object('target1', io.SHAPE_CIRCLE, x=target_areas_pos[1][0], y=target_areas_pos[1][1],
+            radius=target_areas_radius[1], sin=0.0, cos=1.0)
 
         robot_obj = [ None for rid in xrange(self.num_robots) ]
         for rid in xrange(self.num_robots):
             robot_obj[rid] = save_file.add_object('robot'+str(rid), io.SHAPE_CIRCLE,
-                x=transform_hist[0][world][rid][0], y=transform_hist[0][world][rid][1], radius=robot_radius[world],
-                sin=transform_hist[0][world][rid][2], cos=transform_hist[0][world][rid][3],
-                fitness=fitness_hist[0][world][rid], energy=energy_hist[0][world][rid],
-                actuators0=actuators_hist[0][world][rid][0],
-                actuators1=actuators_hist[0][world][rid][1],
-                actuators2=actuators_hist[0][world][rid][2],
-                actuators3=actuators_hist[0][world][rid][3],
-                camera0=sensors_hist[0][world][rid][8],
-                camera1=sensors_hist[0][world][rid][9],
-                camera2=sensors_hist[0][world][rid][10],
-                camera3=sensors_hist[0][world][rid][11],
-                hidden0=hidden_hist[0][world][rid][0],
-                hidden1=hidden_hist[0][world][rid][1],
-                hidden2=hidden_hist[0][world][rid][2])
+                x=transform_hist[0][rid][0], y=transform_hist[0][rid][1], radius=robot_radius[0],
+                sin=transform_hist[0][rid][2], cos=transform_hist[0][rid][3],
+                fitness=fitness_hist[0][rid], energy=energy_hist[0][rid],
+                actuators0=actuators_hist[0][rid][0],
+                actuators1=actuators_hist[0][rid][1],
+                actuators2=actuators_hist[0][rid][2],
+                actuators3=actuators_hist[0][rid][3],
+                camera0=sensors_hist[0][rid][8],
+                camera1=sensors_hist[0][rid][9],
+                camera2=sensors_hist[0][rid][10],
+                camera3=sensors_hist[0][rid][11],
+                hidden0=hidden_hist[0][rid][0],
+                hidden1=hidden_hist[0][rid][1],
+                hidden2=hidden_hist[0][rid][2])
 
         cur = 0
         while (cur < (self.ta+self.tb)):
             for rid in xrange(self.num_robots):
                 robot_obj[rid].update(
-                    x=transform_hist[cur][world][rid][0], y=transform_hist[cur][world][rid][1],
-                    sin=transform_hist[cur][world][rid][2], cos=transform_hist[cur][world][rid][3],
-                    fitness=fitness_hist[cur][world][rid], energy=energy_hist[cur][world][rid],
-                    actuators0=actuators_hist[cur][world][rid][0],
-                    actuators1=actuators_hist[cur][world][rid][1],
-                    actuators2=actuators_hist[cur][world][rid][2],
-                    actuators3=actuators_hist[cur][world][rid][3],
-                    camera0=sensors_hist[cur][world][rid][8],
-                    camera1=sensors_hist[cur][world][rid][9],
-                    camera2=sensors_hist[cur][world][rid][10],
-                    camera3=sensors_hist[cur][world][rid][11],
-                    hidden0=hidden_hist[cur][world][rid][0],
-                    hidden1=hidden_hist[cur][world][rid][1],
-                    hidden2=hidden_hist[cur][world][rid][2])
+                    x=transform_hist[cur][rid][0], y=transform_hist[cur][rid][1],
+                    sin=transform_hist[cur][rid][2], cos=transform_hist[cur][rid][3],
+                    fitness=fitness_hist[cur][rid], energy=energy_hist[cur][rid],
+                    actuators0=actuators_hist[cur][rid][0],
+                    actuators1=actuators_hist[cur][rid][1],
+                    actuators2=actuators_hist[cur][rid][2],
+                    actuators3=actuators_hist[cur][rid][3],
+                    camera0=sensors_hist[cur][rid][8],
+                    camera1=sensors_hist[cur][rid][9],
+                    camera2=sensors_hist[cur][rid][10],
+                    camera3=sensors_hist[cur][rid][11],
+                    hidden0=hidden_hist[cur][rid][0],
+                    hidden1=hidden_hist[cur][rid][1],
+                    hidden2=hidden_hist[cur][rid][2])
 
             save_file.frame()
 

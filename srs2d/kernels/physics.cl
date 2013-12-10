@@ -103,19 +103,19 @@ void simulate(__global float *random,
             }
         }
 
-        if (save_hist == 1)
+        if ((world->id == 0) && (save_hist == 1))
         {
-            unsigned int idx = cur * (NUM_WORLDS * ROBOTS_PER_WORLD) + world->id * ROBOTS_PER_WORLD;
+            unsigned int idx = cur*ROBOTS_PER_WORLD;
             unsigned int idx2;
             unsigned int i;
 
-            robot_radius[world->id] = ROBOT_BODY_RADIUS;
-            arena_size[world->id].x = world->arena_width;
-            arena_size[world->id].y = world->arena_height;
-            target_areas_pos[world->id*2] = world->target_areas[0].center;
-            target_areas_pos[world->id*2+1] = world->target_areas[1].center;
-            target_areas_radius[world->id*2] = world->target_areas[0].radius;
-            target_areas_radius[world->id*2+1] = world->target_areas[1].radius;
+            robot_radius[0] = ROBOT_BODY_RADIUS;
+            arena_size[0].x = world->arena_width;
+            arena_size[0].y = world->arena_height;
+            target_areas_pos[0] = world->target_areas[0].center;
+            target_areas_pos[1] = world->target_areas[1].center;
+            target_areas_radius[0] = world->target_areas[0].radius;
+            target_areas_radius[1] = world->target_areas[1].radius;
 
             for (rid = 0; rid < ROBOTS_PER_WORLD; rid++)
             {
@@ -126,15 +126,15 @@ void simulate(__global float *random,
                 transform_hist[idx+rid].s2 = transforms[rid].rot.sin;
                 transform_hist[idx+rid].s3 = transforms[rid].rot.cos;
 
-                idx2 = cur * (NUM_WORLDS * ROBOTS_PER_WORLD * NUM_SENSORS) + world->id * (ROBOTS_PER_WORLD * NUM_SENSORS) + rid * NUM_SENSORS;
+                idx2 = cur * ROBOTS_PER_WORLD * NUM_SENSORS + rid * NUM_SENSORS;
                 for (i=0; i<NUM_SENSORS; i++)
                     sensors_hist[idx2+i] = world->robots[rid].sensors[i];
 
-                idx2 = cur * (NUM_WORLDS * ROBOTS_PER_WORLD * NUM_ACTUATORS) + world->id * (ROBOTS_PER_WORLD * NUM_ACTUATORS) + rid * NUM_ACTUATORS;
+                idx2 = cur * ROBOTS_PER_WORLD * NUM_ACTUATORS + rid * NUM_ACTUATORS;
                 for (i=0; i<NUM_ACTUATORS; i++)
                     actuators_hist[idx2+i] = world->robots[rid].actuators[i];
 
-                idx2 = cur * (NUM_WORLDS * ROBOTS_PER_WORLD * NUM_HIDDEN) + world->id * (ROBOTS_PER_WORLD * NUM_HIDDEN) + rid * NUM_HIDDEN;
+                idx2 = cur * ROBOTS_PER_WORLD * NUM_HIDDEN + rid * NUM_HIDDEN;
                 for (i=0; i<NUM_HIDDEN; i++)
                     hidden_hist[idx2+i] = world->robots[rid].hidden[i];
             }
@@ -200,21 +200,21 @@ void simulate(__global float *random,
             }
         }
 
-        if (save_hist == 1)
+        if ((world->id == 0) && (save_hist == 1))
         {
-            unsigned int idx = cur * (NUM_WORLDS * ROBOTS_PER_WORLD) + world->id * ROBOTS_PER_WORLD;
+            unsigned int idx = cur*ROBOTS_PER_WORLD;
             unsigned int idx2;
             unsigned int i;
 
             if (robot->id == 0)
             {
-                robot_radius[world->id] = ROBOT_BODY_RADIUS;
-                arena_size[world->id].x = world->arena_width;
-                arena_size[world->id].y = world->arena_height;
-                target_areas_pos[world->id*2] = world->target_areas[0].center;
-                target_areas_pos[world->id*2+1] = world->target_areas[1].center;
-                target_areas_radius[world->id*2] = world->target_areas[0].radius;
-                target_areas_radius[world->id*2+1] = world->target_areas[1].radius;
+                robot_radius[0] = ROBOT_BODY_RADIUS;
+                arena_size[0].x = world->arena_width;
+                arena_size[0].y = world->arena_height;
+                target_areas_pos[0] = world->target_areas[0].center;
+                target_areas_pos[1] = world->target_areas[1].center;
+                target_areas_radius[0] = world->target_areas[0].radius;
+                target_areas_radius[1] = world->target_areas[1].radius;
             }
 
             fitness_hist[idx+robot->id] = robot->fitness;
@@ -224,15 +224,15 @@ void simulate(__global float *random,
             transform_hist[idx+robot->id].s2 = transforms[robot->id].rot.sin;
             transform_hist[idx+robot->id].s3 = transforms[robot->id].rot.cos;
 
-            idx2 = cur * (NUM_WORLDS * ROBOTS_PER_WORLD * NUM_SENSORS) + world->id * (ROBOTS_PER_WORLD * NUM_SENSORS) + robot->id * NUM_SENSORS;
+            idx2 = cur * ROBOTS_PER_WORLD * NUM_SENSORS + robot->id * NUM_SENSORS;
             for (i=0; i<NUM_SENSORS; i++)
                 sensors_hist[idx2+i] = robot->sensors[i];
 
-            idx2 = cur * (NUM_WORLDS * ROBOTS_PER_WORLD * NUM_ACTUATORS) + world->id * (ROBOTS_PER_WORLD * NUM_ACTUATORS) + robot->id * NUM_ACTUATORS;
+            idx2 = cur * ROBOTS_PER_WORLD * NUM_ACTUATORS + robot->id * NUM_ACTUATORS;
             for (i=0; i<NUM_ACTUATORS; i++)
                 actuators_hist[idx2+i] = robot->actuators[i];
 
-            idx2 = cur * (NUM_WORLDS * ROBOTS_PER_WORLD * NUM_HIDDEN) + world->id * (ROBOTS_PER_WORLD * NUM_HIDDEN) + robot->id * NUM_HIDDEN;
+            idx2 = cur * ROBOTS_PER_WORLD * NUM_HIDDEN + robot->id * NUM_HIDDEN;
             for (i=0; i<NUM_HIDDEN; i++)
                 hidden_hist[idx2+i] = robot->hidden[i];
         }
@@ -291,7 +291,7 @@ void init_world(__global float *random,
     world->target_areas[1].radius = TARGET_AREAS_RADIUS;
 
 #ifdef RANDOM_TARGET_AREAS
-    targets_distance = (random[world->id*NUM_WORLDS+(world->random_offset++)] * 0.8) + 0.7;
+    targets_distance = (random[world->id*NUM_WORLDS+(world->random_offset++)] * 0.6) + 0.8;
 
     float max_x = (world->arena_width / 2) - TARGET_AREAS_RADIUS;
     float max_y = (world->arena_height / 2) - TARGET_AREAS_RADIUS;

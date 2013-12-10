@@ -45,6 +45,7 @@ def main():
     parser.add_argument("--tb",                     help="number of timesteps with fitness avaliation, default is 5400", type=int, default=5400)
     parser.add_argument("--trials",                 help="number of trials, default is 500", type=int, default=500)
     parser.add_argument("--num-robots",             help="number of robots, default is 10", type=int, default=10)
+    parser.add_argument("--granularity",            help="number of simulations in parellel, default is 1", type=int, default=1)
     parser.add_argument("--params",                 help="parameters for the neural network", metavar="ANNPARAMS", type=str)
     parser.add_argument("--targets-distances",      help="list of distances between target areas to be evaluated \
         each generation, default is 0.7 0.9 1.1 1.3 1.5", type=float, nargs='+', default=[0.7, 0.9, 1.1, 1.3, 1.5])
@@ -108,7 +109,7 @@ class ReEval(object):
         self.args = args
 
         self.simulator = physics.Simulator(self.context, self.queue,
-                                           num_worlds=1,
+                                           num_worlds=args.granularity,
                                            num_robots=args.num_robots,
                                            ta=args.ta, tb=args.tb, random_targets=args.random_targets)
 
@@ -133,30 +134,29 @@ class ReEval(object):
 
         trial = 1
         while (trial <= self.args.trials):
-            __log__.info('[trial=%d] Evaluating solution...', trial)
+            __log__.info('[trial=%d] ReEvaluating solutions...', trial)
 
             _, filename = tempfile.mkstemp(prefix='reeval_', suffix='.srs')
 
-            f = self.simulator.simulate_and_save(
+            fitness = self.simulator.simulate_and_save(
                 filename,
-                [ self.ann_params ],
+                [ self.ann_params for i in xrange(self.args.granularity) ],
                 targets_distance=self.args.targets_distances[ random.randint(0, len(self.args.targets_distances)-1) ],
                 targets_angle=self.args.targets_angles[ random.randint(0, len(self.args.targets_angles)-1) ]
             )
-            fitness = float(f[0])
-
-            run.upload(filename, 'reeval-%02d-fit-%.4f.srs' % (trial, fitness) )
-            os.remove(filename)
-
-            __log__.info('[trial=%d] Solution evaluated, fitness = %.5f', trial, fitness)
 
             if run:
-                run.progress(trial / float(self.args.trials), {
-                    'trial': trial,
-                    'fitness': fitness
-                })
+                for i in xrange(self.args.granularity):
+                    run.progress((trial+i) / float(self.args.trials), {
+                        'trial': (trial+i),
+                        'fitness': float(fitness[i])
+                    })
 
-            trial += 1
+                run.upload(filename, 'reeval-%02d-fit-%.4f.srs' % (trial, float(fitness[0])) )
+
+            os.remove(filename)
+
+            trial += self.args.granularity
 
         if run:
             run.done()
