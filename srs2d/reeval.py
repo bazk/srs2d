@@ -52,6 +52,7 @@ def main():
     parser.add_argument("--targets-angles",         help="list of axis angles where the target areas \
         are located each trial (between 0 and PI), default is [3*pi/4]", type=float, nargs='+', default=[2.356194490192345])
     parser.add_argument("--random-targets",         help="place targets at random position (obeying targets distances)", action="store_true")
+    parser.add_argument("--symetrical-targets",     help="place targets at symetrical position", action="store_true")
     args = parser.parse_args()
 
     if args.verbosity >= 2:
@@ -96,7 +97,8 @@ def main():
         'TARGETS_ANGLES': args.targets_angles,
         'TRIALS': args.trials,
         'PARAMS': args.params if args.params else '',
-        'RANDOM_TARGETS': 1 if args.random_targets else 0
+        'RANDOM_TARGETS': 1 if args.random_targets else 0,
+        'SYMETRICAL_TARGETS': 1 if args.symetrical_targets else 0
     }, code_version=git_version)
 
     for run in inst.runs:
@@ -111,7 +113,9 @@ class ReEval(object):
         self.simulator = physics.Simulator(self.context, self.queue,
                                            num_worlds=args.granularity,
                                            num_robots=args.num_robots,
-                                           ta=args.ta, tb=args.tb, random_targets=args.random_targets)
+                                           ta=args.ta, tb=args.tb,
+                                           random_targets=args.random_targets,
+                                           symetrical_targets=args.symetrical_targets)
 
         if args.params is not None:
             params = args.params.decode('hex')
