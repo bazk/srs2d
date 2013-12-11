@@ -56,6 +56,7 @@ def main():
     parser.add_argument("--targets-angles",         help="list of axis angles where the target areas \
         are located each trial (between 0 and PI), default is [3*pi/4]", type=float, nargs='+', default=[2.356194490192345])
     parser.add_argument("--random-targets",         help="place targets at random position (obeying targets distances)", action="store_true")
+    parser.add_argument("--symetrical-targets",     help="place targets at symetrical position", action="store_true")
     parser.add_argument("-t", "--trials",           help="number of trials per distance, default is 3", type=int, default=3)
     args = parser.parse_args()
 
@@ -106,7 +107,8 @@ def main():
         'TARGETS_DISTANCES': args.targets_distances,
         'TARGETS_ANGLES': args.targets_angles,
         'TRIALS': args.trials,
-        'RANDOM_TARGETS': 1 if args.random_targets else 0
+        'RANDOM_TARGETS': 1 if args.random_targets else 0,
+        'SYMETRICAL_TARGETS': 1 if args.symetrical_targets else 0
     }, code_version=git_version)
 
     for run in inst.runs:
@@ -130,7 +132,9 @@ class DiscretePSO(object):
         self.simulator = physics.Simulator(self.context, self.queue,
                                            num_worlds=args.population_size,
                                            num_robots=args.num_robots,
-                                           ta=args.ta, tb=args.tb, random_targets=args.random_targets)
+                                           ta=args.ta, tb=args.tb,
+                                           random_targets=args.random_targets,
+                                           symetrical_targets=args.symetrical_targets)
 
         generation = 1
         while (generation <= args.num_generations):

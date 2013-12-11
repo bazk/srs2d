@@ -55,6 +55,7 @@ def main():
     parser.add_argument("--targets-angles",         help="list of axis angles where the target areas \
         are located each trial (between 0 and PI), default is [3*pi/4]", type=float, nargs='+', default=[2.356194490192345])
     parser.add_argument("--random-targets",         help="place targets at random position (obeying targets distances)", action="store_true")
+    parser.add_argument("--symetrical-targets",     help="place targets at symetrical position", action="store_true")
     parser.add_argument("-t", "--trials",           help="number of trials per distance, default is 3", type=int, default=3)
     parser.add_argument("-c", "--pcrossover",       help="probability of crossover, default is 0.9", type=float, default=0.9)
     parser.add_argument("-m", "--pmutation",        help="probability of mutation, default is 0.03", type=float, default=0.03)
@@ -117,7 +118,8 @@ def main():
         'TARGETS_DISTANCES': args.targets_distances,
         'TARGETS_ANGLES': args.targets_angles,
         'TRIALS': args.trials,
-        'RANDOM_TARGETS': 1 if args.random_targets else 0
+        'RANDOM_TARGETS': 1 if args.random_targets else 0,
+        'SYMETRICAL_TARGETS': 1 if args.symetrical_targets else 0
     }, code_version=git_version)
 
     for run in inst.runs:

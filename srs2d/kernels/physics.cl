@@ -290,9 +290,17 @@ void init_world(__global float *random,
     world->target_areas[0].radius = TARGET_AREAS_RADIUS;
     world->target_areas[1].radius = TARGET_AREAS_RADIUS;
 
-#ifdef RANDOM_TARGET_AREAS
+#if defined(RANDOM_TARGET_AREAS) && defined(SYMETRICAL_TARGET_AREAS)
     targets_distance = (random[world->id*NUM_WORLDS+(world->random_offset++)] * 0.6) + 0.8;
+    targets_angle = (random[world->id*NUM_WORLDS+(world->random_offset++)] * M_PI);
+#endif
 
+    world->target_areas[0].center.x = cos(targets_angle) * (targets_distance / 2);
+    world->target_areas[0].center.y = sin(targets_angle) * (targets_distance / 2);
+    world->target_areas[1].center.x = -cos(targets_angle) * (targets_distance / 2);
+    world->target_areas[1].center.y = -sin(targets_angle) * (targets_distance / 2);
+
+#if defined(RANDOM_TARGET_AREAS) && (!defined(SYMETRICAL_TARGET_AREAS))
     float max_x = (world->arena_width / 2) - TARGET_AREAS_RADIUS;
     float max_y = (world->arena_height / 2) - TARGET_AREAS_RADIUS;
     world->target_areas[0].center.x = (random[world->id*NUM_WORLDS+(world->random_offset++)] * 2 * max_x) - max_x;
@@ -332,11 +340,6 @@ void init_world(__global float *random,
 
     world->target_areas[1].center.x = world->target_areas[0].center.x + cos(random_angle) * targets_distance;
     world->target_areas[1].center.y = world->target_areas[0].center.y + sin(random_angle) * targets_distance;
-#else
-    world->target_areas[0].center.x = cos(targets_angle) * (targets_distance / 2);
-    world->target_areas[0].center.y = sin(targets_angle) * (targets_distance / 2);
-    world->target_areas[1].center.x = -cos(targets_angle) * (targets_distance / 2);
-    world->target_areas[1].center.y = -sin(targets_angle) * (targets_distance / 2);
 #endif
 
     unsigned int i, j, p = 0;
