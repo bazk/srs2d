@@ -265,7 +265,7 @@ void init_world(__global float *random,
 
     // walls
     world->arena_height = ARENA_HEIGHT;
-    world->arena_width = ARENA_WIDTH_MIN + (get_global_id(0) / NUM_WORLDS) * (ARENA_WIDTH_MAX - ARENA_WIDTH_MIN);
+    world->arena_width = ARENA_WIDTH_MIN + random[world->id*NUM_WORLDS+(world->random_offset++)] * (ARENA_WIDTH_MAX - ARENA_WIDTH_MIN);
 
     world->walls[0].p1.x = world->arena_width / 2;
     world->walls[0].p1.y = -world->arena_height / 2;
