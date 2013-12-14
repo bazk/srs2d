@@ -27,7 +27,7 @@ import pyopencl as cl
 import logging.config
 import solace
 import io
-import png
+# import png
 import subprocess
 import numpy as np
 import math
@@ -224,7 +224,7 @@ class PSO(object):
             for y in xrange(block_height):
                 pixels.append(line)
 
-        png.from_array(pixels, 'L').save(filename)
+        # png.from_array(pixels, 'L').save(filename)
 
 class Particle(object):
     MIN_SPEED = -0.1

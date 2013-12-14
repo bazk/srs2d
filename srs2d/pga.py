@@ -26,7 +26,6 @@ import logging
 import physics
 import pyopencl as cl
 import solace
-import png
 import subprocess
 import tempfile
 import math

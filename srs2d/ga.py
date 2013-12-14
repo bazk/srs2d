@@ -26,7 +26,7 @@ import logging
 import physics
 import pyopencl as cl
 import solace
-import png
+# import png
 import subprocess
 import tempfile
 import math
@@ -284,7 +284,7 @@ class GA(object):
             for y in xrange(block_height):
                 pixels.append(line)
 
-        png.from_array(pixels, 'L').save(filename)
+        # png.from_array(pixels, 'L').save(filename)
 
 
 class Individual(object):
