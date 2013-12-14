@@ -155,17 +155,20 @@ class PSO(object):
                 p.gbest = self.gbest
                 p.update_pos_vel()
 
-            avg_pbest = 0
+            avg_fitness = 0
+            best_fitness = 0
             for p in self.particles:
-                avg_pbest += p.pbest.fitness
-            avg_pbest /= len(self.particles)
+                if p.fitness >= best_fitness:
+                    best_fitness = p.fitness
+                avg_fitness += p.fitness
+            avg_fitness /= len(self.particles)
 
-            __log__.info('[gen=%d] Particles updated, avg(pbest fitness) = %.5f, gbest fitness: %.5f', generation, avg_pbest, self.gbest.fitness)
+            __log__.info('[gen=%d] Particles updated, avg fitness) = %.5f, best fitness: %.5f', generation, avg_fitness, best_fitness)
 
             run.progress(generation / float(args.num_generations), {
                 'generation': generation,
-                'avg_pbest_fitness': avg_pbest,
-                'gbest_fitness': self.gbest.fitness,
+                'avg_fitness': avg_fitness,
+                'best_fitness': best_fitness,
                 'gbest_position': self.gbest.position_hex
             })
 
