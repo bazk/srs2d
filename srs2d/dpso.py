@@ -297,8 +297,8 @@ class Particle(object):
             p /= np.sum(p)
 
             # weighted choice
-            # choices = sorted([ (i, p[i]) for i in xrange(len(p)) ], key=lambda (v, w): w)
-            choices = [ (i, p[i]) for i in xrange(len(p)) ]
+            choices = sorted([ (i, p[i]) for i in xrange(len(p)) ], key=lambda (v, w): w)
+            # choices = [ (i, p[i]) for i in xrange(len(p)) ]
             r = random.random()
             s = 0
             for v,w in choices:
