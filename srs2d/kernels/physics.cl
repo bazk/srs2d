@@ -13,6 +13,7 @@
 void init_world(__global float *random, __global world_t *world, __local transform_t *transforms, float targets_distance, float targets_angle, __global float *params);
 void init_robot(__global float *random, __global world_t *world, __local transform_t *transforms, __global robot_t *robot);
 void set_random_position(__global float *random, __global world_t *world, __local transform_t *transforms, __global robot_t *robot);
+void step_world(__global world_t *world);
 void step_actuators(__global world_t *world, __local transform_t *transforms, __global robot_t *robot);
 void step_sensors(__global world_t *world, __local transform_t *transforms, __global robot_t *robot);
 void step_collisions(__global world_t *world, __local transform_t *transforms, __global robot_t *robot);
