@@ -37,7 +37,7 @@ NUM_HIDDEN = 3
 ANN_PARAMS_SIZE = NUM_ACTUATORS * (NUM_SENSORS+NUM_HIDDEN) + NUM_ACTUATORS + NUM_HIDDEN * NUM_SENSORS + NUM_HIDDEN + NUM_HIDDEN
 
 class Simulator(object):
-    def __init__(self, context, queue, num_worlds=1, num_robots=10, ta=600, tb=5400, time_step=1/10.0, test=False, random_targets=True, symetrical_targets=False):
+    def __init__(self, context, queue, num_worlds=1, num_robots=10, ta=600, tb=5400, time_step=1/10.0, test=False, random_targets=True, symetrical_targets=False, moving_targets=False):
         self.context = context
         self.queue = queue
 
@@ -90,6 +90,9 @@ class Simulator(object):
 
         if (symetrical_targets):
             options.append('-DSYMETRICAL_TARGET_AREAS')
+
+        if (moving_targets):
+            options.append('-DMOVING_TARGETS')
 
         src = open(os.path.join(__dir__, 'kernels/physics.cl'), 'r')
         self.prg = cl.Program(context, src.read()).build(options=' '.join(options))

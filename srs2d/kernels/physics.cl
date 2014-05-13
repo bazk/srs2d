@@ -84,6 +84,8 @@ void simulate(__global float *random,
         for (rid = 0; rid < ROBOTS_PER_WORLD; rid++)
             step_controllers(world, transforms, &world->robots[rid]);
 
+        step_world(world);
+
         if (cur > TA)
         {
             for (rid = 0; rid < ROBOTS_PER_WORLD; rid++)
@@ -184,6 +186,9 @@ void simulate(__global float *random,
         barrier(CLK_GLOBAL_MEM_FENCE);
 
         step_controllers(world, transforms, robot);
+        barrier(CLK_GLOBAL_MEM_FENCE);
+
+        step_world(world);
         barrier(CLK_GLOBAL_MEM_FENCE);
 
         if (cur > TA)
@@ -290,15 +295,18 @@ void init_world(__global float *random,
     world->target_areas[0].radius = TARGET_AREAS_RADIUS;
     world->target_areas[1].radius = TARGET_AREAS_RADIUS;
 
+    world->targets_distance = targets_distance;
+    world->targets_angle = targets_angle;
+
 #if defined(RANDOM_TARGET_AREAS) && defined(SYMETRICAL_TARGET_AREAS)
-    targets_distance = (random[world->id*NUM_WORLDS+(world->random_offset++)] * 0.6) + 0.8;
-    targets_angle = (random[world->id*NUM_WORLDS+(world->random_offset++)] * M_PI);
+    world->targets_distance = (random[world->id*NUM_WORLDS+(world->random_offset++)] * 0.6) + 0.8;
+    world->targets_angle = (random[world->id*NUM_WORLDS+(world->random_offset++)] * M_PI);
 #endif
 
-    world->target_areas[0].center.x = cos(targets_angle) * (targets_distance / 2);
-    world->target_areas[0].center.y = sin(targets_angle) * (targets_distance / 2);
-    world->target_areas[1].center.x = -cos(targets_angle) * (targets_distance / 2);
-    world->target_areas[1].center.y = -sin(targets_angle) * (targets_distance / 2);
+    world->target_areas[0].center.x = cos(world->targets_angle) * (world->targets_distance / 2);
+    world->target_areas[0].center.y = sin(world->targets_angle) * (world->targets_distance / 2);
+    world->target_areas[1].center.x = -cos(world->targets_angle) * (world->targets_distance / 2);
+    world->target_areas[1].center.y = -sin(world->targets_angle) * (world->targets_distance / 2);
 
 #if defined(RANDOM_TARGET_AREAS) && (!defined(SYMETRICAL_TARGET_AREAS))
     float max_x = (world->arena_width / 2) - TARGET_AREAS_RADIUS;
@@ -306,8 +314,8 @@ void init_world(__global float *random,
     world->target_areas[0].center.x = (random[world->id*NUM_WORLDS+(world->random_offset++)] * 2 * max_x) - max_x;
     world->target_areas[0].center.y = (random[world->id*NUM_WORLDS+(world->random_offset++)] * 2 * max_y) - max_y;
 
-    float gap_width = targets_distance + TARGET_AREAS_RADIUS - (world->arena_width / 2);
-    float gap_height = targets_distance + TARGET_AREAS_RADIUS - (world->arena_height / 2);
+    float gap_width = world->targets_distance + TARGET_AREAS_RADIUS - (world->arena_width / 2);
+    float gap_height = world->targets_distance + TARGET_AREAS_RADIUS - (world->arena_height / 2);
 
     if (gap_width > 0)
     {
@@ -338,8 +346,8 @@ void init_world(__global float *random,
     else // exactly center
         random_angle *= 4;
 
-    world->target_areas[1].center.x = world->target_areas[0].center.x + cos(random_angle) * targets_distance;
-    world->target_areas[1].center.y = world->target_areas[0].center.y + sin(random_angle) * targets_distance;
+    world->target_areas[1].center.x = world->target_areas[0].center.x + cos(random_angle) * world->targets_distance;
+    world->target_areas[1].center.y = world->target_areas[0].center.y + sin(random_angle) * world->targets_distance;
 #endif
 
     unsigned int i, j, p = 0;
@@ -465,6 +473,18 @@ void set_random_position(__global float *random,
 
         tries++;
     }
+}
+
+void step_world(__global world_t *world)
+{
+#if defined(MOVING_TARGETS) && (!defined(RANDOM_TARGET_AREAS))
+    world->targets_angle += M_PI / (TA+TB);
+
+    world->target_areas[0].center.x = cos(world->targets_angle) * (world->targets_distance / 2);
+    world->target_areas[0].center.y = sin(world->targets_angle) * (world->targets_distance / 2);
+    world->target_areas[1].center.x = -cos(world->targets_angle) * (world->targets_distance / 2);
+    world->target_areas[1].center.y = -sin(world->targets_angle) * (world->targets_distance / 2);
+#endif
 }
 
 void step_actuators(__global world_t *world, __local transform_t *transforms, __global robot_t *robot)

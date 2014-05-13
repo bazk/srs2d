@@ -54,6 +54,7 @@ def main():
         are located each trial (between 0 and PI), default is [3*pi/4]", type=float, nargs='+', default=[2.356194490192345])
     parser.add_argument("--random-targets",         help="place targets at random position (obeying targets distances)", action="store_true")
     parser.add_argument("--symetrical-targets",     help="place targets at symetrical position", action="store_true")
+    parser.add_argument("--moving-targets",         help="allow targets to move during the test", action="store_true")
     parser.add_argument("-t", "--trials",           help="number of trials per distance, default is 3", type=int, default=3)
     parser.add_argument("-c", "--pcrossover",       help="probability of crossover, default is 0.9", type=float, default=0.9)
     parser.add_argument("-m", "--pmutation",        help="probability of mutation, default is 0.03", type=float, default=0.03)
@@ -114,7 +115,8 @@ def main():
         'TARGETS_ANGLES': args.targets_angles,
         'TRIALS': args.trials,
         'RANDOM_TARGETS': 1 if args.random_targets else 0,
-        'SYMETRICAL_TARGETS': 1 if args.symetrical_targets else 0
+        'SYMETRICAL_TARGETS': 1 if args.symetrical_targets else 0,
+        'MOVING_TARGETS': 1 if args.moving_targets else 0
     }, code_version=git_version)
 
     for run in inst.runs:
@@ -132,7 +134,8 @@ class GA(object):
                                            num_robots=args.num_robots,
                                            ta=args.ta, tb=args.tb,
                                            random_targets=args.random_targets,
-                                           symetrical_targets=args.symetrical_targets)
+                                           symetrical_targets=args.symetrical_targets,
+                                           moving_targets=args.moving_targets)
 
         self.avg_fitness = None
         self.best = None
